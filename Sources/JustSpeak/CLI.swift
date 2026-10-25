@@ -38,7 +38,9 @@ enum CLI {
 
   /// Runs fetch-models.sh: the copy bundled in JustSpeak.app, or the repo's for `swift run`.
   static func setup() throws -> Int32 {
-    let bundled = Bundle.main.resourceURL?.appendingPathComponent("fetch-models.sh")
+    // resolve first: via Homebrew's bin/ symlink, Bundle.main is bin/, not the app
+    let bundled = Bundle.main.executableURL?.resolvingSymlinksInPath().deletingLastPathComponent()
+      .appendingPathComponent("../Resources/fetch-models.sh").standardizedFileURL
     let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
       .appendingPathComponent("../../scripts/fetch-models.sh").standardizedFileURL
     guard let script = [bundled, repo].compactMap({ $0 }).first(where: {

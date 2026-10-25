@@ -17,6 +17,37 @@ Hold a key, speak, let go — your words appear, cleaned up, wherever the cursor
 - **Local history**: plain JSONL per month, readable with `jq`/`grep` or `just-speak history`.
 - **JSON config** with hot reload.
 
+## Install
+
+```sh
+brew install --cask jxu-dev-c/tap/just-speak
+just-speak setup                 # model → ~/Library/Application Support/just-speak/models (~1 GB, once)
+mkdir -p ~/.config/just-speak
+echo 'INCEPTION_API_KEY=...' > ~/.config/just-speak/.env && chmod 600 ~/.config/just-speak/.env
+open -a JustSpeak
+```
+
+Not an admin? `/Applications` needs admin rights, so install into your own Applications folder instead
+with `brew install --cask --appdir=~/Applications jxu-dev-c/tap/just-speak`, or set
+`export HOMEBREW_CASK_OPTS="--appdir=$HOME/Applications"` in your shell profile so upgrades go there too.
+
+There's no Apple Developer account behind this project, so releases are signed with a self-signed
+identity and not notarized. The cask clears the quarantine flag so Gatekeeper lets it open. If you
+download the zip from GitHub Releases yourself, run
+`xattr -dr com.apple.quarantine JustSpeak.app` (or use System Settings → Privacy & Security → Open Anyway).
+
+Grant the two permissions it asks for (System Settings → Privacy & Security):
+**Microphone** and **Accessibility** (the hotkey and typing into other apps). macOS shows each
+prompt only once; afterwards the menu's "Grant permissions…" opens the right Settings pane.
+Releases and `build-app.sh` sign with the same self-signed identity, so these grants survive upgrades and rebuilds.
+
+### Build from source
+
+```sh
+scripts/fetch-deps.sh            # sherpa-onnx dylibs → vendor/, model → ~/Library/Application Support/just-speak/models
+scripts/build-app.sh --install   # build, sign, copy to /Applications, link /usr/local/bin/just-speak
+```
+
 ## Privacy
 
 Audio never leaves your Mac: recording, voice activity detection and transcription run locally.
@@ -50,33 +81,6 @@ Fun-ASR-Nano's sherpa-onnx export has a 512-token context (prompt + ~17 audio to
 a single pass truncates past ~20 s. Silero VAD cuts long recordings at the latest pause before 18 s;
 shorter ones are decoded in one pass. Silence is trimmed, and a recording with no speech is ignored.
 Keep `hotwords` to a few dozen entries — they share that context.
-
-## Install
-
-```sh
-brew install --cask jxu-dev-c/tap/just-speak
-just-speak setup                 # model → ~/Library/Application Support/just-speak/models (~1 GB, once)
-mkdir -p ~/.config/just-speak
-echo 'INCEPTION_API_KEY=...' > ~/.config/just-speak/.env && chmod 600 ~/.config/just-speak/.env
-open /Applications/JustSpeak.app
-```
-
-There's no Apple Developer account behind this project, so releases are signed with a self-signed
-identity and not notarized. The cask clears the quarantine flag so Gatekeeper lets it open. If you
-download the zip from GitHub Releases yourself, run
-`xattr -dr com.apple.quarantine JustSpeak.app` (or use System Settings → Privacy & Security → Open Anyway).
-
-Grant the two permissions it asks for (System Settings → Privacy & Security):
-**Microphone** and **Accessibility** (the hotkey and typing into other apps). macOS shows each
-prompt only once; afterwards the menu's "Grant permissions…" opens the right Settings pane.
-Releases and `build-app.sh` sign with the same self-signed identity, so these grants survive upgrades and rebuilds.
-
-### Build from source
-
-```sh
-scripts/fetch-deps.sh            # sherpa-onnx dylibs → vendor/, model → ~/Library/Application Support/just-speak/models
-scripts/build-app.sh --install   # build, sign, copy to /Applications, link /usr/local/bin/just-speak
-```
 
 ## Use
 
