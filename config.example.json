@@ -1,0 +1,54 @@
+// ~/.config/just-speak/config.json — JSON5: comments and trailing commas are fine.
+// Only the keys you set are needed; everything else falls back to the defaults shown here.
+// Changes apply on save (no restart).
+{
+  "hotkey": {
+    "key": "rightOption",      // rightOption | leftOption | rightCommand | rightControl | rightShift | fn
+    "mode": "hold",            // hold = push-to-talk, toggle = press to start, press to stop (Esc cancels)
+    "minHoldMs": 250,          // hold mode: shorter presses are ignored
+  },
+
+  // Names and jargon to bias recognition toward; also passed to the rewriter as preferred spellings.
+  // Keep it to a few dozen: they share the ASR model's 512-token context with the audio.
+  "hotwords": ["Inception", "Mercury", "sherpa-onnx"],
+
+  "asr": {
+    "modelDir": "~/Library/Application Support/just-speak/models/funasr-nano-int8-mmap",
+    "vadModel": "~/Library/Application Support/just-speak/models/silero_vad.onnx",  // splits long dictation at pauses
+    "numThreads": 4,           // fastest on M-series; 2 is ~25% slower, 6 no faster
+    "language": "",            // "" = auto; or "中文", "英文", "日文"
+    "itn": true,               // spoken numbers → digits
+    "unloadAfterIdleMinutes": 10,  // free ~1 GB after this long unused; 0 = keep loaded
+  },
+
+  "rewrite": {
+    "enabled": true,
+    "endpoint": "https://api.inceptionlabs.ai/v1/chat/completions",
+    "model": "mercury-3",
+    "reasoningEffort": "instant",
+    "timeoutMs": 2500,         // on timeout/error the raw transcript is inserted instead
+    "minChars": 6,             // shorter transcripts skip the rewrite
+    "apiKey": "",              // "" = INCEPTION_API_KEY from env or ~/.config/just-speak/.env
+    "systemPrompt": null,      // null = built-in prompt
+  },
+
+  "output": {
+    "method": "type",          // type = synthetic keystrokes (clipboard untouched)
+                               // ax = accessibility insert (native Cocoa apps only)
+                               // paste = ⌘V via a transient pasteboard entry, then restore
+    "switchToAsciiInputSource": true,  // briefly switch away from Pinyin etc. while typing
+    "newlines": "shiftReturn", // shiftReturn | keep | space — shiftReturn won't send chat messages early
+  },
+
+  "feedback": {
+    "pill": true,              // floating "Listening…" pill with a level meter while recording
+    "startSound": "Tink",      // any name in /System/Library/Sounds; "" = silent
+    "stopSound": "Pop",
+    "volume": 0.35,
+  },
+
+  "history": {
+    "enabled": true,
+    "retentionDays": 0,        // 0 = keep forever
+  },
+}

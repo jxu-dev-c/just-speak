@@ -1,0 +1,7 @@
+.env
+vendor/
+.build/
+build/
+*.app
+.DS_Store
+testing-audio/

@@ -1,0 +1,171 @@
+{
+  "summary": {
+    "mercury-3 (instant)": {
+      "n": 30,
+      "ttft_med": 0.40562845836393535,
+      "ttft_p90": 0.5259802080690861,
+      "ttft_mean": 0.4227185333923747,
+      "total_med": 0.41036475053988397,
+      "total_p90": 0.5267929583787918,
+      "total_mean": 0.4249224474808822,
+      "stream_tps_med": 8689.896734853904,
+      "e2e_tps_med": 109.0001276810963,
+      "reasoning_mean": 0,
+      "cold_ttft_med": 0.39926999993622303,
+      "by_prompt": {
+        "short": {
+          "ttft_med": 0.38198439637199044,
+          "total_med": 0.38317047990858555,
+          "tokens_med": 14.0
+        },
+        "medium": {
+          "ttft_med": 0.4185973957646638,
+          "total_med": 0.4221556878183037,
+          "tokens_med": 51.0
+        },
+        "long": {
+          "ttft_med": 0.42116041691042483,
+          "total_med": 0.42465233337134123,
+          "tokens_med": 100.5
+        }
+      }
+    },
+    "mercury-3 (default)": {
+      "n": 30,
+      "ttft_med": 0.6699949372559786,
+      "ttft_p90": 1.0446702502667904,
+      "ttft_mean": 0.7298891444845746,
+      "total_med": 0.6960822292603552,
+      "total_p90": 1.045489083044231,
+      "total_mean": 0.745951566658914,
+      "stream_tps_med": 1783.3237934126182,
+      "e2e_tps_med": 388.3028899766283,
+      "reasoning_mean": 236.46666666666667,
+      "cold_ttft_med": 0.563966749701649,
+      "by_prompt": {
+        "short": {
+          "ttft_med": 0.704483478795737,
+          "total_med": 0.7095601670444012,
+          "tokens_med": 261.0
+        },
+        "medium": {
+          "ttft_med": 0.6280842085834593,
+          "total_med": 0.6288390627596527,
+          "tokens_med": 153.5
+        },
+        "long": {
+          "ttft_med": 0.6622851665597409,
+          "total_med": 0.7085672290995717,
+          "tokens_med": 313.5
+        }
+      }
+    },
+    "groq gpt-oss-20b (low)": {
+      "n": 30,
+      "ttft_med": 0.3052695619408041,
+      "ttft_p90": 0.3820667499676347,
+      "ttft_mean": 0.301630333205685,
+      "total_med": 0.40628639538772404,
+      "total_p90": 0.526823665946722,
+      "total_mean": 0.39858057629317045,
+      "stream_tps_med": 957.7862825266592,
+      "e2e_tps_med": 208.47428928054404,
+      "reasoning_mean": 17.133333333333333,
+      "cold_ttft_med": 0.38081391667947173,
+      "by_prompt": {
+        "short": {
+          "ttft_med": 0.32973733311519027,
+          "total_med": 0.34220185363665223,
+          "tokens_med": 66.0
+        },
+        "medium": {
+          "ttft_med": 0.25982829206623137,
+          "total_med": 0.3770700835157186,
+          "tokens_med": 60.0
+        },
+        "long": {
+          "ttft_med": 0.30405960441567004,
+          "total_med": 0.4784074171911925,
+          "tokens_med": 136.0
+        }
+      }
+    },
+    "groq gpt-oss-120b (low)": {
+      "n": 30,
+      "ttft_med": 0.3153426868375391,
+      "ttft_p90": 0.4135301657952368,
+      "ttft_mean": 0.3339176236341397,
+      "total_med": 0.48866666690446436,
+      "total_p90": 0.6516384165734053,
+      "total_mean": 0.4748739125051846,
+      "stream_tps_med": 552.4232383225888,
+      "e2e_tps_med": 146.200711290627,
+      "reasoning_mean": 6,
+      "cold_ttft_med": 0.22412275010719895,
+      "by_prompt": {
+        "short": {
+          "ttft_med": 0.34031266649253666,
+          "total_med": 0.3749505835585296,
+          "tokens_med": 30.0
+        },
+        "medium": {
+          "ttft_med": 0.3498079578857869,
+          "total_med": 0.4587378744035959,
+          "tokens_med": 67.0
+        },
+        "long": {
+          "ttft_med": 0.2821089585777372,
+          "total_med": 0.5182556037325412,
+          "tokens_med": 138.0
+        }
+      }
+    },
+    "groq qwen3.8-27b (none)": {
+      "n": 30,
+      "ttft_med": 0.2341522709466517,
+      "ttft_p90": 0.4439484579488635,
+      "ttft_mean": 0.2801263485879948,
+      "total_med": 0.3765837913379073,
+      "total_p90": 0.5084489160217345,
+      "total_mean": 0.3964924207888544,
+      "stream_tps_med": 506.6960212691981,
+      "e2e_tps_med": 124.4332447465426,
+      "reasoning_mean": 0,
+      "cold_ttft_med": 0.24682845873758197,
+      "by_prompt": {
+        "short": {
+          "ttft_med": 0.22212112531997263,
+          "total_med": 0.26055033365264535,
+          "tokens_med": 16.0
+        },
+        "medium": {
+          "ttft_med": 0.28353541693650186,
+          "total_med": 0.39014000026509166,
+          "tokens_med": 50.0
+        },
+        "long": {
+          "ttft_med": 0.22429300006479025,
+          "total_med": 0.3931994994636625,
+          "tokens_med": 107.0
+        }
+      }
+    }
+  },
+  "samples": {
+    "mercury-3 (instant) | short": "Me and him went to the store yesterday, and we bought some milk.",
+    "mercury-3 (default) | short": "He and I went to the store yesterday and bought some milk.",
+    "groq gpt-oss-20b (low) | short": "My friend and I went to the store yesterday and bought some milk.",
+    "groq gpt-oss-120b (low) | short": "My friend and I went to the store yesterday, and we bought some milk.",
+    "groq qwen3.8-27b (none) | short": "Yesterday, my friend and I went to the store and bought some milk.",
+    "mercury-3 (instant) | medium": "The meeting tomorrow has been moved to 3 PM instead of 2 PM because Sarah can\u2019t make it at 2. Also, please make sure everyone brings their laptops, as we\u2019ll be doing a demo of the new feature. Let everyone know.",
+    "mercury-3 (default) | medium": "The meeting tomorrow has been moved from 2 PM to 3 PM because Sarah can't make it at 2. Also, everyone should bring their laptops for the demo of the new feature. Please let everyone know.",
+    "groq gpt-oss-20b (low) | medium": "The meeting tomorrow has been moved to 3\u202fp.m. instead of 2\u202fp.m. because Sarah cannot attend at the original time. Please remind everyone to bring their laptops, as we will be demoing the new feature.",
+    "groq gpt-oss-120b (low) | medium": "The meeting tomorrow will be moved to 3\u202fp.m. instead of 2\u202fp.m. because Sarah cannot attend at 2\u202fp.m. Please remind everyone to bring their laptops, as we will be demonstrating the new feature. Let everyone know.",
+    "groq qwen3.8-27b (none) | medium": "The meeting tomorrow has been moved to 3:00 PM instead of 2:00 PM because Sarah cannot attend at 2:00 PM. Please ensure everyone brings their laptops, as we will be demonstrating the new feature.",
+    "mercury-3 (instant) | long": "Here is the problem rewritten as a clean word problem for a student:\n\n---\n\nA train leaves the station at 9:00 AM, traveling at a constant speed of 60 miles per hour. A second train leaves the same station at 10:00 AM, traveling in the same direction at a constant speed of 80 miles per hour.\n\n**Question 1:** At what time will the second train catch up to the first train, and how far from the station will the two trains be when this happens?\n\n**Question 2:** Suppose the first train had left at 8:30 AM instead, with the second train still leaving at 10:00 AM. How does this change the catch-up time and the distance from the station?",
+    "mercury-3 (default) | long": "A train leaves the station at 9:00 AM, traveling at 60 miles per hour. A second train leaves the same station at 10:00 AM, traveling at 80 miles per hour in the same direction.\n\nQuestion 1: At what time does the second train catch up to the first train, and how far from the station are they when this happens?\n\nQuestion 2: How would the answer change if the first train had left at 8:30 AM instead of 9:00 AM?",
+    "groq gpt-oss-20b (low) | long": "A train departs from a station at 9:00\u202fa.m. traveling at 60\u202fmph.  \nA second train departs from the same station at 10:00\u202fa.m. traveling at 80\u202fmph in the same direction.\n\n**Questions**\n\n1. At what time does the second train catch up to the first train, and how far from the station are they when this occurs?  \n2. If the first train had departed at 8:30\u202fa.m. instead of 9:00\u202fa.m., how would the answer to question\u202f1 change?",
+    "groq gpt-oss-120b (low) | long": "A train departs a station at 9:00\u202fa.m. traveling at 60\u202fmi/h. A second train leaves the same station traveling in the same direction at 10:00\u202fa.m. with a speed of 80\u202fmi/h.\n\n1. At what time will the second train catch up to the first train, and how many miles from the station will they be at that moment?\n\n2. If the first train had left at 8:30\u202fa.m. instead of 9:00\u202fa.m., how would the answer to part\u202f1 change?",
+    "groq qwen3.8-27b (none) | long": "A train leaves a station at 9:00 AM traveling at 60 miles per hour. A second train leaves the same station at 10:00 AM traveling in the same direction at 80 miles per hour.\n\n1. At what time does the second train catch up to the first train, and how far from the station are they at that moment?\n2. If the first train had left at 8:30 AM instead, how would the answer to the first question change?"
+  }
+}
