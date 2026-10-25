@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// A small glass orb floating near the bottom of the screen: a band of light that swells with the voice
-/// while recording and narrows and breathes while processing. It springs in, and dissolves when done
+/// A small glass orb floating near the bottom of the screen: a band of light that holds still in silence,
+/// swells with the voice while recording, and narrows and breathes while processing. It springs in, and dissolves when done
 /// (the light goes out first, then the glass sinks away). No words, except a caption for errors. It never
 /// takes focus or intercepts clicks, so typing into the target app is unaffected.
 @MainActor
@@ -173,6 +173,8 @@ final class OrbDynamics {
   var mode = Mode.listening
   var tint = NSColor.systemOrange
   private var targetLevel = 0.0
+  private var noiseFloor: Double?
+  private var lastPush: Double?
   private var current = OrbFrame(presence: 0)
   private var last: Double?
   private var enterAt: Double?, enterFrom = 0.0
@@ -206,13 +208,25 @@ final class OrbDynamics {
   func resetLevel() {
     targetLevel = 0
     current.level = 0
+    noiseFloor = nil
+    lastPush = nil
   }
 
   /// `rms` is the raw RMS of the latest audio buffer (0…1).
   func push(_ rms: Float) {
-    // Speech RMS is roughly 0.005–0.2; map to 0…1 on a log scale.
-    let db = 20 * log10(max(Double(rms), 1e-5))
-    targetLevel = min(1, max(0, (db + 50) / 40))
+    let now = CACurrentMediaTime()
+    let dt = min(max(now - (lastPush ?? now), 0), 0.5)
+    lastPush = now
+    let db = 20 * log10(max(Double(rms), 1e-6))
+    // Measure the voice against the room rather than an absolute scale: the floor follows quieter readings
+    // quickly and creeps up 2 dB/s, so steady fan or street noise reads as silence (the orb stays still)
+    // while even a quiet voice stands out from it.
+    var floor = noiseFloor ?? db
+    floor = db < floor ? floor + (db - floor) * (1 - exp(-dt * 4)) : min(db, floor + 2 * dt)
+    floor = min(-35, max(-75, floor))
+    noiseFloor = floor
+    // 5 dB of headroom over the floor, full scale 25 dB above it; the curve lifts soft speech.
+    targetLevel = pow(min(1, max(0, (db - floor - 5) / 25)), 0.6)
   }
 
   func step(to t: Double) -> OrbFrame {
@@ -236,7 +250,8 @@ final class OrbDynamics {
     f.level += (level - f.level) * (1 - exp(-dt * (level > f.level ? 28 : 7)))
     f.thinking += ((mode == .processing ? 1 : 0) - f.thinking) * (1 - exp(-dt * 5))
     tintAmount += ((mode == .message ? 1 : 0) - tintAmount) * (1 - exp(-dt * 6))
-    f.spin += dt * (0.5 + 2.6 * f.thinking + 1.2 * f.level)
+    // Still in silence: the rim only turns with the voice, or while processing.
+    f.spin += dt * (2.4 * f.thinking + 1.6 * f.level)
 
     if let shakeAt, t - shakeAt < 0.8 {
       let tau = t - shakeAt
@@ -327,13 +342,13 @@ struct OrbFace: View {
     let voice = f.level
     let breathe = 0.5 + 0.5 * sin(t * 4.2)
     let flicker = voice * (0.05 * sin(t * 13.7) + 0.035 * sin(t * 22.3))
-    // A thin streak at rest that stretches toward the rim and brightens with the voice; while thinking it
-    // narrows and breathes.
+    // A still, thin streak in silence that stretches toward the rim and brightens with the voice; while
+    // thinking it narrows and breathes.
     let bandWidth = d * (0.7 + 0.24 * voice + flicker) * (1 - f.thinking * (0.42 - 0.22 * breathe))
       * (0.15 + 0.85 * light)
     let bandHeight = d * (0.06 + 0.05 * voice) * (1 + 0.6 * f.thinking * breathe)
-    let tilt = -5 + 3 * sin(t * 1.1) + 16 * f.thinking * sin(t * 1.9)
-    let glow = min(1, 0.35 + 0.65 * voice + f.thinking * (0.25 + 0.3 * breathe)) * light
+    let tilt = -5 + 4 * voice * sin(t * 2.3) + 16 * f.thinking * sin(t * 1.9)
+    let glow = min(1, 0.3 + 0.7 * voice + f.thinking * (0.25 + 0.3 * breathe)) * light
     let scale = (0.3 + 0.7 * p) * (1 + 0.05 * voice)
 
     ZStack {
