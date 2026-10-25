@@ -213,7 +213,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     status.lastSummary = "Last: \(String(format: "%.1f", Double(durationMs) / 1000))s audio → "
       + "asr \(asrMs)ms" + (rewriteMs.map { " + rewrite \($0)ms" } ?? "") + " (total \(total.ms)ms)"
     Log.info("dictation audio=\(durationMs)ms asr=\(asrMs)ms rewrite=\(rewriteMs.map(String.init) ?? "-")ms "
-      + "total=\(total.ms)ms chunks=\(result.chunks.count) chars=\(text.count) "
+      + "total=\(total.ms)ms chunks=\(result.chunks.count) tail=\(result.tailMs)ms "
+      + "spec=\(result.tailReused ? "hit" : "miss") chars=\(text.count) "
       + "footprint=\(Int(ProcessStats.footprintMB))MB")
 
     history?.append(HistoryRecord(durationMs: durationMs, raw: raw, rewritten: rewritten, app: app,
