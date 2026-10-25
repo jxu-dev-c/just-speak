@@ -5,8 +5,8 @@
 Hold a key, speak, let go — your words appear, cleaned up, wherever the cursor is.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/pill-dark.png">
-  <img src="docs/pill-light.png" width="520" alt="The floating just-speak pill showing a rose level meter and &quot;Listening…&quot;">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/orb-dark.png">
+  <img src="docs/orb-light.png" width="520" alt="The floating just-speak orb: dark glass with a band of light across the middle and an iridescent rim">
 </picture>
 
 - **On-device ASR**: [Fun-ASR-Nano](https://github.com/FunAudioLLM/Fun-ASR) (int8) via sherpa-onnx.
@@ -107,9 +107,10 @@ Line breaks are sent as Shift+Return so chat apps don't send early (set `output.
 note that terminals treat Shift+Return as Return). Pressing another key while holding the hotkey
 (e.g. ⌥← to jump words) cancels too, so Option keeps working as a modifier.
 
-A soft sound marks start and stop, and a small "Listening…" pill with a mic level meter sits at the
-bottom of the screen while you speak, ringed in the app's rose accent (a spinner while transcribing). Both are configurable under `feedback`.
-The screenshots above are rendered from the real pill views with `just-speak render-pill docs`.
+A soft sound marks start and stop, and a small glass orb sits at the bottom of the screen while you speak:
+its band of light swells with your voice, narrows and breathes while transcribing, and dissolves once the
+text is in. It only shows words for errors. Both are configurable under `feedback` (`feedback.pill` turns the orb off).
+The screenshots above are rendered from the real orb view with `just-speak render-orb docs`.
 
 Menu bar icon: 🎤 idle · rose mic recording · ⋯ processing · ⚠︎ something needs attention (open the menu).
 
