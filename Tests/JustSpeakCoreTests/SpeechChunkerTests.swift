@@ -50,6 +50,45 @@ private func wav(_ name: String) throws -> [Float] {
     #expect(covered > s.count * 8 / 10, "speech dropped")
   }
 
+  @Test func cutsEagerlyAtAPauseAfterEnoughSpeech() throws {
+    // 10.6 s of speech, a 1.5 s pause, then more: the first chunk is cut in the pause, not at 18 s.
+    let first = try wav("noise_en.wav")
+    let s = try first + [Float](repeating: 0, count: 24000) + wav("far_3.wav")
+    let c = try chunks(s)
+    #expect(c.count >= 2)
+    #expect(c.contains { $0.upperBound >= first.count && $0.upperBound <= first.count + 24000 },
+            "no cut in the pause: \(c)")
+  }
+
+  @Test func pendingTailMatchesFinishWhenNothingFollows() throws {
+    let s = try wav("noise_en.wav") + [Float](repeating: 0, count: 16000)
+    let c = try SpeechChunker(vadModel: vad, params: { var p = SpeechChunker.Params(); p.eagerCutSeconds = 60; return p }())
+    var out: [Range<Int>] = []
+    var tail: Range<Int>?
+    for i in stride(from: 0, to: s.count, by: 1600) {
+      out += s.withUnsafeBufferPointer { c.accept(UnsafeBufferPointer(rebasing: $0[i..<min(i + 1600, s.count)])) }
+      tail = c.pendingTail() ?? tail
+    }
+    #expect(out.isEmpty)
+    let final = c.finish(total: s.count)
+    let t = try #require(tail)
+    let f = try #require(final)
+    #expect(c.isSameSpeech(t, as: f), "tail \(t) vs final \(f)")
+  }
+
+  @Test func laterSpeechInvalidatesThePendingTail() throws {
+    let s = try wav("rag_math.wav") + [Float](repeating: 0, count: 12000) + wav("rag_math.wav")
+    let c = try SpeechChunker(vadModel: vad, params: { var p = SpeechChunker.Params(); p.eagerCutSeconds = 60; return p }())
+    var firstTail: Range<Int>?
+    for i in stride(from: 0, to: s.count, by: 1600) {
+      _ = s.withUnsafeBufferPointer { c.accept(UnsafeBufferPointer(rebasing: $0[i..<min(i + 1600, s.count)])) }
+      if i >= 16000 * 3 { firstTail = firstTail ?? c.pendingTail() }
+    }
+    let t = try #require(firstTail)
+    let f = try #require(c.finish(total: s.count))
+    #expect(!c.isSameSpeech(t, as: f))
+  }
+
   @Test func leadingSilenceIsTrimmed() throws {
     let s = [Float](repeating: 0, count: 16000 * 3) + (try wav("noise_en.wav"))
     let c = try chunks(s)

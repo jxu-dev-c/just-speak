@@ -4,9 +4,10 @@ import Foundation
 /// Splits a growing recording into ASR-sized chunks at natural pauses, using Silero VAD.
 ///
 /// Fun-ASR-Nano (as exported for sherpa-onnx) has a 512-token context shared by the prompt, the audio
-/// (~17 tokens/s) and the output, so past ~20 s the transcript is truncated. A chunk grows until it
-/// would exceed `maxChunkSeconds` and is then cut at its latest pause, so anything shorter is decoded
-/// in one pass (best accuracy) and longer dictation is transcribed piecewise while the user keeps talking.
+/// (~17 tokens/s) and the output, so past ~20 s the transcript is truncated. A chunk is cut at the first
+/// pause after `eagerCutSeconds` of speech, so dictation is transcribed piecewise while the user keeps
+/// talking and only the speech since the last pause is left at release. Speech without such a pause is
+/// cut at its latest pause (or forcibly) before it grows past `maxChunkSeconds`.
 /// Leading/trailing silence is trimmed, and audio with no detected speech yields no chunk at all.
 ///
 /// Not thread-safe: drive it from one queue.
@@ -17,6 +18,9 @@ public final class SpeechChunker {
     /// Pauses earlier than this into a chunk aren't used as cut points; a forced cut is preferred
     /// over a sliver of a chunk.
     public var minChunkSeconds = 6.0
+    /// Once a chunk holds this much speech, it is cut at the next pause instead of waiting for
+    /// `maxChunkSeconds`. Shorter pieces cost a little cross-sentence context, so not every pause cuts.
+    public var eagerCutSeconds = 6.0
     /// Audio kept on each side of detected speech so word onsets/endings aren't clipped.
     public var padSeconds = 0.5
     public init() {}
@@ -28,6 +32,10 @@ public final class SpeechChunker {
   private let minChunk: Int
   private let maxChunk: Int
   private let pad: Int
+  private let eagerCut: Int
+  /// Silence after a segment (beyond the pad) before its pause counts as settled: the VAD reports new
+  /// speech only after `min_speech_duration`, so speech starting inside the pad is detected by then.
+  private let settle: Int
 
   private var fed = 0                       // absolute samples fed so far
   private var cut = 0                       // start of the region not yet handed out as a chunk
@@ -40,6 +48,8 @@ public final class SpeechChunker {
     minChunk = Int(params.minChunkSeconds * Double(Self.sampleRate))
     maxChunk = Int(params.maxChunkSeconds * Double(Self.sampleRate))
     pad = Int(params.padSeconds * Double(Self.sampleRate))
+    eagerCut = Int(params.eagerCutSeconds * Double(Self.sampleRate))
+    settle = pad + Int(0.25 * Double(Self.sampleRate))
 
     let modelPath = strdup(vadModel.path)!
     let provider = strdup("cpu")!
@@ -78,7 +88,30 @@ public final class SpeechChunker {
       let at = pause.map { min($0.upperBound + pad, fed) } ?? (cut + maxChunk)
       if let c = closeChunk(at: at, speechContinues: pause == nil) { chunks.append(c) }
     }
+    if let first = segments.first, let last = settledPause, last.upperBound - first.lowerBound >= eagerCut,
+       let c = closeChunk(at: last.upperBound + pad, speechContinues: false) {
+      chunks.append(c)
+    }
     return chunks
+  }
+
+  /// The speech still pending, as soon as the VAD has closed its latest segment; nil while speaking or
+  /// with nothing pending. Lets the caller decode the tail before release: see `isSameSpeech`.
+  public func pendingTail() -> Range<Int>? {
+    guard !isSpeaking, let first = segments.first, let last = segments.last else { return nil }
+    return max(cut, first.lowerBound - pad)..<last.upperBound
+  }
+
+  /// Whether `finish`'s chunk holds the same speech as an earlier `pendingTail`, differing at most by
+  /// trailing padding. Any later segment ends after the old one, so it would push `final` past the pad.
+  public func isSameSpeech(_ tail: Range<Int>, as final: Range<Int>) -> Bool {
+    final.lowerBound == tail.lowerBound && final.upperBound <= tail.upperBound + pad
+  }
+
+  /// The last finished segment, if the VAD has heard nothing since it for at least `settle` samples.
+  private var settledPause: Range<Int>? {
+    guard !isSpeaking, let last = segments.last, fed - last.upperBound >= settle else { return nil }
+    return last
   }
 
   /// Call once recording stops (`total` = samples recorded). Returns the final chunk, if it has speech.

@@ -173,7 +173,8 @@ enum CLI {
       let result = try await session.finish()
       let spans = result.chunks.map { String(format: "%.1f–%.1fs", Double($0.lowerBound) / 16000, Double($0.upperBound) / 16000) }
       report(f, audioMs: result.durationMs, asrMs: t.ms, chunks: result.chunks.count, text: result.text)
-      print("  chunks: \(spans.joined(separator: ", "))")
+      print("  chunks: \(spans.joined(separator: ", "))  tail \(result.tailMs)ms"
+        + (result.tailReused ? " (decoded before release)" : ""))
     }
     return 0
   }

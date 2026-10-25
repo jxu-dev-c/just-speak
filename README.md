@@ -89,15 +89,17 @@ the log records only timings and sizes, never what you said.
 | Model loaded | ~0.9–1.3 GB, loads in ~1.2 s (overlapped with your speech) |
 | ASR | ~0.07× real time — 10 s of speech ≈ 0.75 s |
 | Rewrite | ~0.3–0.5 s |
-| Long dictation | chunks ≥18 s are transcribed while you keep talking; only the tail is left at release |
+| Long dictation | transcribed in pieces at your pauses while you keep talking; only the speech since your last pause is left at release, and none if you paused before letting go |
 
 The model is converted at install time so onnxruntime memory-maps its weights
 (`scripts/externalize_onnx.py`): 2.2 GB → 0.9 GB loaded, same speed and output.
 The CoreML execution provider was measured ~10× slower for this model and is not used.
 
 Fun-ASR-Nano's sherpa-onnx export has a 512-token context (prompt + ~17 audio tokens/s + output), so
-a single pass truncates past ~20 s. Silero VAD cuts long recordings at the latest pause before 18 s;
-shorter ones are decoded in one pass. Silence is trimmed, and a recording with no speech is ignored.
+a single pass truncates past ~20 s. Silero VAD cuts a recording at the first pause after 6 s of speech
+(or at the latest pause before 18 s if there is none), and the speech since the last pause is decoded
+whenever you pause, so release latency stays flat however long you talk. Silence is trimmed, and a
+recording with no speech is ignored.
 Keep `hotwords` to a few dozen entries — they share that context.
 
 ## Use
