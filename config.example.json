@@ -41,7 +41,7 @@
   },
 
   "feedback": {
-    "pill": true,              // floating "Listening…" pill with a level meter while recording
+    "pill": true,              // floating orb that reacts to your voice while recording
     "startSound": "Tink",      // any name in /System/Library/Sounds; "" = silent
     "stopSound": "Pop",
     "volume": 0.35,

@@ -35,8 +35,8 @@ final class AppController: NSObject, NSApplicationDelegate {
   private var preloadWork: DispatchWorkItem?
   private var permissionTimer: Timer?
   private var lastText: String?
-  private let pill = Pill()
-  /// Whether the current recording has been confirmed as a dictation (sound played, pill shown).
+  private let orb = Orb()
+  /// Whether the current recording has been confirmed as a dictation (sound played, orb shown).
   private var announced = false
 
   func applicationDidFinishLaunching(_ notification: Notification) {
@@ -104,11 +104,11 @@ final class AppController: NSObject, NSApplicationDelegate {
         guard feedback.pill else { return }
         var rms: Float = 0
         vDSP_rmsqv(samples, 1, &rms, vDSP_Length(samples.count))
-        Task { @MainActor in self?.pill.setLevel(rms) }
+        Task { @MainActor in self?.orb.setLevel(rms) }
       }
     } catch {
       status.set(.warning, message: "microphone: \(error.localizedDescription)")
-      pill.showMessage("Microphone unavailable: \(error.localizedDescription)")
+      orb.showMessage("Microphone unavailable: \(error.localizedDescription)")
       return
     }
     announced = false
@@ -122,7 +122,7 @@ final class AppController: NSObject, NSApplicationDelegate {
       guard let self, case .recording = self.state else { return }
       self.announced = true
       self.playSound(self.config.feedback.startSound)
-      if self.config.feedback.pill { self.pill.showListening() }
+      if self.config.feedback.pill { self.orb.showListening() }
       self.transcriber.preload()
       if self.config.rewrite.enabled { self.rewriter.warmUp() }
     }
@@ -144,7 +144,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     session = nil  // chunks already handed to the ASR queue finish and are discarded
     state = .idle
     status.set(.idle)
-    if announced { pill.hide() }
+    if announced { orb.hide() }
     announced = false
   }
 
@@ -157,7 +157,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     status.set(.processing)
     if announced {
       playSound(config.feedback.stopSound)
-      if config.feedback.pill { pill.showProcessing() }
+      if config.feedback.pill { orb.showProcessing() }
     }
     let cfg = config
     Task { await process(session, app: app, config: cfg) }
@@ -172,7 +172,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     } catch {
       Log.info("asr failed: \(error)")
       status.set(.warning, message: "\(error)")
-      if cfg.feedback.pill { pill.showMessage("Transcription failed: \(error)") }
+      if cfg.feedback.pill { orb.showMessage("Transcription failed: \(error)") }
       return
     }
     let asrMs = total.ms  // only the not-yet-transcribed tail; earlier chunks ran during speech
@@ -180,9 +180,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     let durationMs = result.durationMs
     guard durationMs >= 300, !raw.isEmpty else {  // too short, or VAD heard no speech
       status.set(.idle)
-      if cfg.feedback.pill {
-        pill.showMessage("No speech detected", symbol: "mic.slash", color: .secondaryLabelColor, seconds: 1.2)
-      }
+      if cfg.feedback.pill { orb.shakeOff() }
       return
     }
 
@@ -203,11 +201,11 @@ final class AppController: NSObject, NSApplicationDelegate {
     lastText = text
 
     if Inserter.hasAccessibility {
-      if cfg.feedback.pill { pill.hide() }
+      if cfg.feedback.pill { orb.hide() }
       await Inserter.insert(text, config: cfg.output)
     } else {
       status.set(.warning, message: "Accessibility permission needed to insert text (use Copy Last Dictation)")
-      if cfg.feedback.pill { pill.showMessage("Accessibility permission needed — use Copy Last Dictation") }
+      if cfg.feedback.pill { orb.showMessage("Accessibility permission needed — use Copy Last Dictation") }
     }
     if status.phase != .warning { status.set(.idle) }
     status.lastSummary = "Last: \(String(format: "%.1f", Double(durationMs) / 1000))s audio → "

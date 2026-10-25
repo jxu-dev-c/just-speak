@@ -48,7 +48,7 @@ public struct Config: Codable, Equatable, Sendable {
   }
 
   public struct Feedback: Codable, Equatable, Sendable {
-    /// Floating "Listening…" pill with a level meter at the bottom of the screen.
+    /// Floating orb at the bottom of the screen that reacts to the voice while recording.
     public var pill = true
     /// System sound names (/System/Library/Sounds); "" disables.
     public var startSound = "Tink"

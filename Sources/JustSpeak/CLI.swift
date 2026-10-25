@@ -9,7 +9,7 @@ enum CLI {
            just-speak transcribe [--threads N] [--hotwords a,b] [--whole | --realtime] FILE.wav...
            just-speak rewrite TEXT           (or text on stdin)
            just-speak config-path
-           just-speak render-pill DIR       write the README screenshots of the pill (light and dark)
+           just-speak render-orb DIR        write the README screenshots of the orb (light and dark)
     """
 
   static func run(_ cmd: String, _ args: [String]) async -> Int32 {
@@ -19,7 +19,7 @@ enum CLI {
       case "history": return try history(args)
       case "transcribe": return try await transcribe(args)
       case "rewrite": return try await rewrite(args)
-      case "render-pill": return try await renderPill(args)
+      case "render-orb": return try await renderOrb(args)
       case "config-path":
         print(Paths.configFile.path)
         return 0
@@ -186,23 +186,24 @@ enum CLI {
   }
 
   @MainActor
-  static func renderPill(_ args: [String]) throws -> Int32 {
+  static func renderOrb(_ args: [String]) throws -> Int32 {
     guard let dir = args.first.map({ URL(fileURLWithPath: $0) }) else {
-      throw ConfigError.invalid("render-pill takes an output directory")
+      throw ConfigError.invalid("render-orb takes an output directory")
     }
     _ = NSApplication.shared
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    let variants: [(String, NSAppearance.Name, NSColor, NSColor)] = [
-      ("pill-light.png", .aqua, NSColor(srgbRed: 0.99, green: 0.91, blue: 0.90, alpha: 1),
+    let variants: [(String, NSColor, NSColor)] = [
+      ("orb-light.png", NSColor(srgbRed: 0.99, green: 0.91, blue: 0.90, alpha: 1),
        NSColor(srgbRed: 0.86, green: 0.90, blue: 0.99, alpha: 1)),
-      ("pill-dark.png", .darkAqua, NSColor(srgbRed: 0.24, green: 0.10, blue: 0.20, alpha: 1),
+      ("orb-dark.png", NSColor(srgbRed: 0.24, green: 0.10, blue: 0.20, alpha: 1),
        NSColor(srgbRed: 0.08, green: 0.10, blue: 0.20, alpha: 1)),
     ]
-    for (name, appearance, from, to) in variants {
-      let rep = Pill().renderListening(appearance: NSAppearance(named: appearance)!, backdrop: (from, to),
-                                       canvas: NSSize(width: 520, height: 140), level: 0.06)
+    for (name, from, to) in variants {
+      guard let rep = Orb.renderSnapshot(backdrop: (from, to), canvas: NSSize(width: 520, height: 180), level: 0.45),
+            let png = rep.representation(using: .png, properties: [:])
+      else { throw ConfigError.invalid("could not render \(name)") }
       let url = dir.appendingPathComponent(name)
-      try rep.representation(using: .png, properties: [:])!.write(to: url)
+      try png.write(to: url)
       print(url.path)
     }
     return 0
