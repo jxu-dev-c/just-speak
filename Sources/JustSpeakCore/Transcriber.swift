@@ -135,7 +135,12 @@ public final class Transcriber: @unchecked Sendable {
 
   /// Start loading in the background (called on hotkey-down so loading overlaps speech).
   public func preload() {
-    queue.async { _ = try? self.ensureLoadedLocked() }
+    queue.async {
+      guard (try? self.ensureLoadedLocked()) != nil else { return }
+      // Arm the idle timer here too: a preload may never be followed by a decode
+      // (dictation cancelled, or no speech detected), and the model must not stay resident.
+      self.scheduleUnloadLocked()
+    }
   }
 
   public func transcribe(_ samples: [Float], options: DecodeOptions) async throws -> String {
