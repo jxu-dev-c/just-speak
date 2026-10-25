@@ -16,6 +16,7 @@ final class Pill {
   }
 
   private lazy var panel: NSPanel = makePanel()
+  private let background = BackgroundView()
   private let meter = LevelMeter()
   private let spinner = NSProgressIndicator()
   private let checkmark = NSImageView()
@@ -27,6 +28,7 @@ final class Pill {
     setIcon(meter)
     meter.reset()
     setText("Listening…", dim: false)
+    background.isLive = true
     present()
   }
 
@@ -39,6 +41,7 @@ final class Pill {
     setIcon(spinner)
     spinner.startAnimation(nil)
     setText("Transcribing…", dim: true)
+    background.isLive = false
     present()
   }
 
@@ -48,6 +51,7 @@ final class Pill {
     checkmark.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
       .withSymbolConfiguration(.init(paletteColors: [color]))
     setText(text, dim: false)
+    background.isLive = false
     present()
     hide(after: seconds)
   }
@@ -128,7 +132,7 @@ final class Pill {
     p.isReleasedWhenClosed = false
     p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
 
-    let bg = NSVisualEffectView()
+    let bg = background
     bg.material = .hudWindow
     bg.blendingMode = .behindWindow
     bg.state = .active
@@ -154,6 +158,28 @@ private final class NonActivatingPanel: NSPanel {
   override var canBecomeMain: Bool { false }
 }
 
+/// The capsule's blurred background, ringed in the accent color while the mic is live.
+@MainActor
+private final class BackgroundView: NSVisualEffectView {
+  var isLive = false {
+    didSet { if isLive != oldValue { applyRing() } }
+  }
+
+  override func viewDidChangeEffectiveAppearance() {
+    super.viewDidChangeEffectiveAppearance()
+    applyRing()
+  }
+
+  private func applyRing() {
+    guard let layer else { return }
+    layer.borderWidth = isLive ? 1 : 0
+    // Resolve the dynamic color against this view's appearance, not whatever is current.
+    effectiveAppearance.performAsCurrentDrawingAppearance {
+      layer.borderColor = Brand.accent.withAlphaComponent(0.55).cgColor
+    }
+  }
+}
+
 /// Five bars driven by the mic level, drawn with plain layers (no per-frame allocation).
 @MainActor
 private final class LevelMeter: NSView {
@@ -166,10 +192,10 @@ private final class LevelMeter: NSView {
     super.init(frame: frame)
     wantsLayer = true
     for b in bars {
-      b.backgroundColor = NSColor.systemRed.cgColor
       b.cornerRadius = 1.5
       layer?.addSublayer(b)
     }
+    applyColor()
   }
 
   required init?(coder: NSCoder) { fatalError() }
@@ -191,6 +217,18 @@ private final class LevelMeter: NSView {
   override func layout() {
     super.layout()
     redraw()
+  }
+
+  override func viewDidChangeEffectiveAppearance() {
+    super.viewDidChangeEffectiveAppearance()
+    applyColor()
+  }
+
+  private func applyColor() {
+    effectiveAppearance.performAsCurrentDrawingAppearance {
+      let color = Brand.accent.cgColor
+      for b in bars { b.backgroundColor = color }
+    }
   }
 
   private func redraw() {

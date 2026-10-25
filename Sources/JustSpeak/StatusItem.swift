@@ -37,7 +37,7 @@ final class StatusItem: NSObject, NSMenuDelegate {
     let (symbol, tint): (String, NSColor?) = switch phase {
     case .idle: ("mic", nil)
     case .loading: ("mic.badge.plus", nil)
-    case .recording: ("mic.fill", .systemRed)
+    case .recording: ("mic.fill", Brand.accent)
     case .processing: ("ellipsis.circle", nil)
     case .warning: ("exclamationmark.triangle", .systemOrange)
     }

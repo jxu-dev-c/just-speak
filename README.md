@@ -1,3 +1,5 @@
+<img src="Resources/icon.png" width="128" alt="just-speak icon">
+
 # just-speak
 
 Hold a key, speak, let go — your words appear, cleaned up, wherever the cursor is.
@@ -66,9 +68,9 @@ note that terminals treat Shift+Return as Return). Pressing another key while ho
 (e.g. ⌥← to jump words) cancels too, so Option keeps working as a modifier.
 
 A soft sound marks start and stop, and a small "Listening…" pill with a mic level meter sits at the
-bottom of the screen while you speak (a spinner while transcribing). Both are configurable under `feedback`.
+bottom of the screen while you speak, ringed in the app's rose accent (a spinner while transcribing). Both are configurable under `feedback`.
 
-Menu bar icon: 🎤 idle · red mic recording · ⋯ processing · ⚠︎ something needs attention (open the menu).
+Menu bar icon: 🎤 idle · rose mic recording · ⋯ processing · ⚠︎ something needs attention (open the menu).
 
 Config: `~/.config/just-speak/config.json` — see [`config.example.json`](config.example.json).
 

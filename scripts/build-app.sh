@@ -22,6 +22,7 @@ echo "==> assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resources"
 cp "$ROOT/LICENSE" "$ROOT/THIRD_PARTY_NOTICES.md" "$APP/Contents/Resources/"
+cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/"   # regenerate: swift scripts/make-icon.swift Resources
 cp "$BIN" "$APP/Contents/MacOS/just-speak"
 cp "$ROOT/vendor/sherpa-onnx/lib/libsherpa-onnx-c-api.dylib" "$ROOT/vendor/sherpa-onnx/lib/libonnxruntime.dylib" \
   "$APP/Contents/Frameworks/"
@@ -38,6 +39,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>CFBundleDisplayName</key><string>just-speak</string>
   <key>CFBundleExecutable</key><string>just-speak</string>
   <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$VERSION</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
