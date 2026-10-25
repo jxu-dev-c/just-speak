@@ -10,6 +10,21 @@ Hold a key, speak, let go — your words appear, cleaned up, wherever the cursor
 - **Local history**: plain JSONL per month, readable with `jq`/`grep` or `just-speak history`.
 - **JSON config** with hot reload.
 
+## Privacy
+
+Audio never leaves your Mac: recording, voice activity detection and transcription run locally.
+When `rewrite.enabled` is on (the default), the **transcript text** of each dictation is sent to
+Inception's API for cleanup; set it to `false` to stay fully offline. History stays on disk in
+`~/Library/Application Support/just-speak/history/` as plain JSON (owner-only permissions), and
+the log records only timings and sizes, never what you said.
+
+## Requirements
+
+- macOS 14+ on Apple Silicon (prebuilt sherpa-onnx libraries are arm64)
+- Xcode or the Swift 6 toolchain
+- `uv` or `python3` for the one-off model conversion in `fetch-deps.sh`
+- ~1.1 GB disk for the model; an [Inception](https://www.inceptionlabs.ai) API key for the rewrite step
+
 ## Numbers (M5, 4 threads)
 
 | | |
@@ -83,3 +98,8 @@ just-speak config-path
 swift build && swift test
 swift run just-speak transcribe ~/Library/Application\ Support/just-speak/models/funasr-nano-int8-mmap/test_wavs/far_3.wav
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE). Third-party runtimes and models are downloaded at setup time and keep
+their own (Apache-2.0 / MIT) licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

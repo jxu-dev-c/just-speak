@@ -20,7 +20,8 @@ BIN="$(swift build -c release --package-path "$ROOT" --show-bin-path)/just-speak
 
 echo "==> assembling $APP"
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resources"
+cp "$ROOT/LICENSE" "$ROOT/THIRD_PARTY_NOTICES.md" "$APP/Contents/Resources/"
 cp "$BIN" "$APP/Contents/MacOS/just-speak"
 cp "$ROOT/vendor/sherpa-onnx/lib/libsherpa-onnx-c-api.dylib" "$ROOT/vendor/sherpa-onnx/lib/libonnxruntime.dylib" \
   "$APP/Contents/Frameworks/"
