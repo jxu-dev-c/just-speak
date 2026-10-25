@@ -22,8 +22,8 @@ Hold a key, speak, let go — your words appear, cleaned up, wherever the cursor
 ```sh
 brew install --cask jxu-dev-c/tap/just-speak
 just-speak setup                 # model → ~/Library/Application Support/just-speak/models (~1 GB, once)
-mkdir -p ~/.config/just-speak
-echo 'INCEPTION_API_KEY=...' > ~/.config/just-speak/.env && chmod 600 ~/.config/just-speak/.env
+mkdir -p ~/.config/just-speak    # API key for the rewrite step; see "Inception API key" below
+echo 'INCEPTION_API_KEY=your-key-here' > ~/.config/just-speak/.env && chmod 600 ~/.config/just-speak/.env
 open -a JustSpeak
 ```
 
@@ -40,6 +40,24 @@ Grant the two permissions it asks for (System Settings → Privacy & Security):
 **Microphone** and **Accessibility** (the hotkey and typing into other apps). macOS shows each
 prompt only once; afterwards the menu's "Grant permissions…" opens the right Settings pane.
 Releases and `build-app.sh` sign with the same self-signed identity, so these grants survive upgrades and rebuilds.
+
+### Inception API key
+
+The rewrite step needs an API key from [Inception](https://www.inceptionlabs.ai): sign up and create one in
+their dashboard. Without a key, dictation still works: you get the raw transcript, and the menu bar
+shows ⚠︎ "rewrite failed" (set `rewrite.enabled` to `false` to turn the rewrite step off instead).
+
+```sh
+mkdir -p ~/.config/just-speak
+echo 'INCEPTION_API_KEY=your-key-here' > ~/.config/just-speak/.env
+chmod 600 ~/.config/just-speak/.env
+just-speak rewrite "um so like hello"   # check: prints the cleaned-up text
+```
+
+The key is looked up in this order: `rewrite.apiKey` in `config.json`, then the `INCEPTION_API_KEY`
+environment variable, then `~/.config/just-speak/.env`. Use the `.env` file for the app, since an app opened from
+Finder or `open` doesn't see variables exported in your shell profile. The key is read at launch,
+so quit and reopen JustSpeak after changing it.
 
 ### Build from source
 
