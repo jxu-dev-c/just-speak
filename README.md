@@ -61,8 +61,10 @@ echo 'INCEPTION_API_KEY=...' > ~/.config/just-speak/.env && chmod 600 ~/.config/
 open /Applications/JustSpeak.app
 ```
 
-The release build is signed with a self-signed identity, not notarized; the cask clears the
-quarantine flag so Gatekeeper lets it open.
+There's no Apple Developer account behind this project, so releases are signed with a self-signed
+identity and not notarized. The cask clears the quarantine flag so Gatekeeper lets it open. If you
+download the zip from GitHub Releases yourself, run
+`xattr -dr com.apple.quarantine JustSpeak.app` (or use System Settings → Privacy & Security → Open Anyway).
 
 Grant the two permissions it asks for (System Settings → Privacy & Security):
 **Microphone** and **Accessibility** (the hotkey and typing into other apps). macOS shows each
