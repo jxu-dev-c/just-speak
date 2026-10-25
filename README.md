@@ -28,8 +28,8 @@ the log records only timings and sizes, never what you said.
 ## Requirements
 
 - macOS 14+ on Apple Silicon (prebuilt sherpa-onnx libraries are arm64)
-- Xcode or the Swift 6 toolchain
-- `uv` or `python3` for the one-off model conversion in `fetch-deps.sh`
+- Xcode or the Swift 6 toolchain (building from source only)
+- `uv` or `python3` for the one-off model conversion (`just-speak setup`)
 - ~1.1 GB disk for the model; an [Inception](https://www.inceptionlabs.ai) API key for the rewrite step
 
 ## Numbers (M5, 4 threads)
@@ -51,19 +51,30 @@ a single pass truncates past ~20 s. Silero VAD cuts long recordings at the lates
 shorter ones are decoded in one pass. Silence is trimmed, and a recording with no speech is ignored.
 Keep `hotwords` to a few dozen entries — they share that context.
 
-## Setup
+## Install
 
 ```sh
-scripts/fetch-deps.sh            # sherpa-onnx dylibs → vendor/, model → ~/Library/Application Support/just-speak/models
-scripts/build-app.sh --install   # build, sign, copy to /Applications, link /usr/local/bin/just-speak
+brew install --cask jxu-dev-c/tap/just-speak
+just-speak setup                 # model → ~/Library/Application Support/just-speak/models (~1 GB, once)
+mkdir -p ~/.config/just-speak
 echo 'INCEPTION_API_KEY=...' > ~/.config/just-speak/.env && chmod 600 ~/.config/just-speak/.env
 open /Applications/JustSpeak.app
 ```
 
+The release build is signed with a self-signed identity, not notarized; the cask clears the
+quarantine flag so Gatekeeper lets it open.
+
 Grant the two permissions it asks for (System Settings → Privacy & Security):
 **Microphone** and **Accessibility** (the hotkey and typing into other apps). macOS shows each
 prompt only once; afterwards the menu's "Grant permissions…" opens the right Settings pane.
-`build-app.sh` signs with a local self-signed identity so these grants survive rebuilds.
+Releases and `build-app.sh` sign with the same self-signed identity, so these grants survive upgrades and rebuilds.
+
+### Build from source
+
+```sh
+scripts/fetch-deps.sh            # sherpa-onnx dylibs → vendor/, model → ~/Library/Application Support/just-speak/models
+scripts/build-app.sh --install   # build, sign, copy to /Applications, link /usr/local/bin/just-speak
+```
 
 ## Use
 
@@ -106,6 +117,16 @@ just-speak config-path
 swift build && swift test
 swift run just-speak transcribe ~/Library/Application\ Support/just-speak/models/funasr-nano-int8-mmap/test_wavs/far_3.wav
 ```
+
+### Releasing
+
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+`.github/workflows/release.yml` tests, builds and signs the app, attaches `JustSpeak-<version>.zip` to a
+GitHub Release and updates `Casks/just-speak.rb` in [jxu-dev-c/homebrew-tap](https://github.com/jxu-dev-c/homebrew-tap).
+It needs the secrets listed at the top of that workflow.
 
 ## License
 

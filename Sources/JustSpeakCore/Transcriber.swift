@@ -8,7 +8,7 @@ public enum TranscriberError: Error, CustomStringConvertible {
 
   public var description: String {
     switch self {
-    case .missingModelFile(let p): return "model file not found: \(p) (run scripts/fetch-deps.sh)"
+    case .missingModelFile(let p): return "model file not found: \(p) (run `just-speak setup`)"
     case .createFailed: return "sherpa-onnx failed to create the Fun-ASR-Nano recognizer"
     }
   }

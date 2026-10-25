@@ -1,0 +1,108 @@
+# Push a vX.Y.Z tag: test, build and sign JustSpeak.app, publish a GitHub Release,
+# and update the cask in jxu-dev-c/homebrew-tap.
+#
+# Secrets:
+#   SIGNING_CERT_P12       base64 .p12 of the "just-speak local signing" identity (same one local builds use,
+#                          so Microphone/Accessibility grants survive upgrades)
+#   SIGNING_CERT_PASSWORD  its export password
+#   HOMEBREW_TAP_TOKEN     fine-grained PAT with contents:write on jxu-dev-c/homebrew-tap
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release, e.g. v0.1.0"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-26
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Version from tag
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "tag must look like v1.2.3, got $TAG" >&2; exit 1; }
+          echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
+
+      - uses: actions/cache@v4
+        with:
+          path: vendor
+          key: vendor-${{ hashFiles('scripts/fetch-deps.sh') }}
+
+      - name: Fetch sherpa-onnx libs
+        run: scripts/fetch-deps.sh --libs-only
+
+      - name: Test
+        run: swift test
+
+      - name: Import signing identity
+        env:
+          SIGNING_CERT_P12: ${{ secrets.SIGNING_CERT_P12 }}
+          SIGNING_CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          kc_pass="$(openssl rand -hex 16)"
+          echo "$SIGNING_CERT_P12" | base64 --decode > "$RUNNER_TEMP/id.p12"
+          security create-keychain -p "$kc_pass" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$kc_pass" "$keychain"
+          security import "$RUNNER_TEMP/id.p12" -k "$keychain" -P "$SIGNING_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$kc_pass" "$keychain" >/dev/null
+          read -ra existing <<< "$(security list-keychains -d user | tr -d '"' | xargs)"
+          security list-keychains -d user -s "$keychain" "${existing[@]}"
+          rm "$RUNNER_TEMP/id.p12"
+          security find-identity -p codesigning "$keychain" | grep -q '"just-speak local signing"'
+
+      - name: Build app
+        run: scripts/build-app.sh
+
+      - name: Package
+        run: |
+          zip="build/JustSpeak-$VERSION.zip"
+          ditto -c -k --keepParent build/JustSpeak.app "$zip"
+          echo "ZIP=$zip" >> "$GITHUB_ENV"
+          echo "SHA256=$(shasum -a 256 "$zip" | cut -d' ' -f1)" >> "$GITHUB_ENV"
+
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ZIP" --clobber
+          else
+            gh release create "$TAG" "$ZIP" --title "just-speak $VERSION" --generate-notes
+          fi
+
+      - name: Update Homebrew tap
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          git clone --depth 1 "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/jxu-dev-c/homebrew-tap.git" "$RUNNER_TEMP/tap"
+          mkdir -p "$RUNNER_TEMP/tap/Casks"
+          scripts/render-cask.sh "$VERSION" "$SHA256" > "$RUNNER_TEMP/tap/Casks/just-speak.rb"
+          cd "$RUNNER_TEMP/tap"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/just-speak.rb
+          if git diff --cached --quiet; then echo "cask unchanged"; exit 0; fi
+          git commit -m "just-speak $VERSION"
+          git push
+
+      - name: Remove signing keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true

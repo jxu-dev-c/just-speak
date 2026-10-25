@@ -4,6 +4,7 @@ import JustSpeakCore
 enum CLI {
   static let usage = """
     usage: just-speak                     run the menu-bar app
+           just-speak setup                  download the speech model (~1 GB, once)
            just-speak history [--since 7d|2026-10-01] [--grep TEXT] [--raw] [--json]
            just-speak transcribe [--threads N] [--hotwords a,b] [--whole | --realtime] FILE.wav...
            just-speak rewrite TEXT           (or text on stdin)
@@ -14,6 +15,7 @@ enum CLI {
   static func run(_ cmd: String, _ args: [String]) async -> Int32 {
     do {
       switch cmd {
+      case "setup": return try setup()
       case "history": return try history(args)
       case "transcribe": return try await transcribe(args)
       case "rewrite": return try await rewrite(args)
@@ -32,6 +34,25 @@ enum CLI {
       FileHandle.standardError.write(Data("error: \(error)\n".utf8))
       return 1
     }
+  }
+
+  /// Runs fetch-models.sh: the copy bundled in JustSpeak.app, or the repo's for `swift run`.
+  static func setup() throws -> Int32 {
+    let bundled = Bundle.main.resourceURL?.appendingPathComponent("fetch-models.sh")
+    let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .appendingPathComponent("../../scripts/fetch-models.sh").standardizedFileURL
+    guard let script = [bundled, repo].compactMap({ $0 }).first(where: {
+      FileManager.default.fileExists(atPath: $0.path)
+    }) else {
+      FileHandle.standardError.write(Data("error: fetch-models.sh not found\n".utf8))
+      return 1
+    }
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/bin/bash")
+    p.arguments = [script.path]
+    try p.run()
+    p.waitUntilExit()
+    return p.terminationStatus
   }
 
   static func history(_ args: [String]) throws -> Int32 {

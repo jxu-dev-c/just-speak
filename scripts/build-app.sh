@@ -10,9 +10,9 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="$ROOT/build/JustSpeak.app"
 IDENTITY="just-speak local signing"
 BUNDLE_ID="dev.just-speak.app"
-VERSION="0.1.0"
+VERSION="${VERSION:-0.1.0}"   # CI passes the tag version
 
-[ -f "$ROOT/vendor/sherpa-onnx/lib/libsherpa-onnx-c-api.dylib" ] || "$ROOT/scripts/fetch-deps.sh"
+[ -f "$ROOT/vendor/sherpa-onnx/lib/libsherpa-onnx-c-api.dylib" ] || "$ROOT/scripts/fetch-deps.sh" --libs-only
 
 echo "==> swift build -c release"
 swift build -c release --package-path "$ROOT" >/dev/null
@@ -23,6 +23,8 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resources"
 cp "$ROOT/LICENSE" "$ROOT/THIRD_PARTY_NOTICES.md" "$APP/Contents/Resources/"
 cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/"   # regenerate: swift scripts/make-icon.swift Resources
+# `just-speak setup` runs these to download the model
+cp "$ROOT/scripts/fetch-models.sh" "$ROOT/scripts/externalize_onnx.py" "$APP/Contents/Resources/"
 cp "$BIN" "$APP/Contents/MacOS/just-speak"
 cp "$ROOT/vendor/sherpa-onnx/lib/libsherpa-onnx-c-api.dylib" "$ROOT/vendor/sherpa-onnx/lib/libonnxruntime.dylib" \
   "$APP/Contents/Frameworks/"
