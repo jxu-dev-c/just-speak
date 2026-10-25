@@ -99,17 +99,23 @@ final class Pill {
   }
 
   private func layout() {
-    let textWidth = min(label.intrinsicContentSize.width,
-                        Metrics.maxWidth - 2 * Metrics.inset - Metrics.iconWidth - Metrics.gap)
-    let width = max(Metrics.minWidth, ceil(textWidth) + 2 * Metrics.inset + Metrics.iconWidth + Metrics.gap)
-    let h = Metrics.height
+    let width = layoutContent()
     // The screen with the mouse pointer, which is where the user is looking.
     let mouse = NSEvent.mouseLocation
     let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
     let visible = screen?.visibleFrame ?? .zero
-    let frame = NSRect(x: visible.midX - width / 2, y: visible.minY + Metrics.bottomOffset, width: width, height: h)
+    let frame = NSRect(x: visible.midX - width / 2, y: visible.minY + Metrics.bottomOffset, width: width,
+                       height: Metrics.height)
     panel.setFrame(frame, display: true)
+  }
 
+  /// Sizes the capsule to its text and positions the subviews; returns the capsule width.
+  @discardableResult
+  private func layoutContent() -> CGFloat {
+    let textWidth = min(label.intrinsicContentSize.width,
+                        Metrics.maxWidth - 2 * Metrics.inset - Metrics.iconWidth - Metrics.gap)
+    let width = max(Metrics.minWidth, ceil(textWidth) + 2 * Metrics.inset + Metrics.iconWidth + Metrics.gap)
+    let h = Metrics.height
     let iconFrame = NSRect(x: Metrics.inset, y: (h - 18) / 2, width: Metrics.iconWidth, height: 18)
     meter.frame = iconFrame
     checkmark.frame = iconFrame.insetBy(dx: 4, dy: 0)
@@ -117,6 +123,43 @@ final class Pill {
     let x = Metrics.inset + Metrics.iconWidth + Metrics.gap
     let labelHeight = label.intrinsicContentSize.height
     label.frame = NSRect(x: x, y: (h - labelHeight) / 2, width: width - x - Metrics.inset, height: labelHeight)
+    return width
+  }
+
+  // MARK: - Snapshot
+
+  /// Renders the listening state centered on a gradient backdrop at 2x, for the README
+  /// (`just-speak render-pill`). Offscreen the material can't blur what is behind it, so it is drawn as a
+  /// tint over a smooth backdrop, where a blur would look the same. Takes the views out of the panel, so
+  /// use a throwaway Pill.
+  func renderListening(appearance: NSAppearance, backdrop: (NSColor, NSColor), canvas: NSSize,
+                       level: Float) -> NSBitmapImageRep {
+    panel.contentView = NSView()
+    setIcon(meter)
+    for _ in 0..<4 { meter.push(level) }
+    label.stringValue = "Listening…"
+    label.textColor = .labelColor
+    background.isLive = true
+    background.blendingMode = .withinWindow
+    let width = layoutContent()
+
+    let pill = NSRect(x: ((canvas.width - width) / 2).rounded(), y: ((canvas.height - Metrics.height) / 2).rounded(),
+                      width: width, height: Metrics.height)
+    let host = SnapshotBackdrop(frame: NSRect(origin: .zero, size: canvas), colors: backdrop, pill: pill)
+    let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: true)
+    window.appearance = appearance
+    window.contentView = host
+    background.frame = pill
+    host.addSubview(background)
+    host.layoutSubtreeIfNeeded()
+
+    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(canvas.width) * 2,
+                               pixelsHigh: Int(canvas.height) * 2, bitsPerSample: 8, samplesPerPixel: 4,
+                               hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0,
+                               bitsPerPixel: 0)!
+    rep.size = canvas
+    host.cacheDisplay(in: host.bounds, to: rep)
+    return rep
   }
 
   private func makePanel() -> NSPanel {
@@ -156,6 +199,40 @@ final class Pill {
 private final class NonActivatingPanel: NSPanel {
   override var canBecomeKey: Bool { false }
   override var canBecomeMain: Bool { false }
+}
+
+/// A gradient "desktop" with the capsule's drop shadow, behind `Pill.renderListening`.
+@MainActor
+private final class SnapshotBackdrop: NSView {
+  private let colors: (NSColor, NSColor)
+  private let pill: NSRect
+
+  init(frame: NSRect, colors: (NSColor, NSColor), pill: NSRect) {
+    self.colors = colors
+    self.pill = pill
+    super.init(frame: frame)
+  }
+
+  required init?(coder: NSCoder) { fatalError() }
+
+  override func draw(_ dirtyRect: NSRect) {
+    NSGradient(starting: colors.0, ending: colors.1)?.draw(in: bounds, angle: -35)
+    // Shadow only: clip the capsule out so its fill never shows through the translucent material.
+    let capsule = NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2)
+    let outside = NSBezierPath(rect: bounds)
+    outside.append(capsule)
+    outside.windingRule = .evenOdd
+    NSGraphicsContext.saveGraphicsState()
+    outside.addClip()
+    let shadow = NSShadow()
+    shadow.shadowBlurRadius = 18
+    shadow.shadowOffset = NSSize(width: 0, height: -6)
+    shadow.shadowColor = NSColor.black.withAlphaComponent(0.28)
+    shadow.set()
+    NSColor.black.setFill()
+    capsule.fill()
+    NSGraphicsContext.restoreGraphicsState()
+  }
 }
 
 /// The capsule's blurred background, ringed in the accent color while the mic is live.

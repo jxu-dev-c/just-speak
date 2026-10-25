@@ -4,6 +4,11 @@
 
 Hold a key, speak, let go — your words appear, cleaned up, wherever the cursor is.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/pill-dark.png">
+  <img src="docs/pill-light.png" width="520" alt="The floating just-speak pill showing a rose level meter and &quot;Listening…&quot;">
+</picture>
+
 - **On-device ASR**: [Fun-ASR-Nano](https://github.com/FunAudioLLM/Fun-ASR) (int8) via sherpa-onnx.
   Chinese, English, Japanese, dialects and code-switching.
 - **Rewrite**: Inception Mercury 3 (`reasoning_effort: instant`) removes fillers, false starts and fixes
@@ -69,6 +74,7 @@ note that terminals treat Shift+Return as Return). Pressing another key while ho
 
 A soft sound marks start and stop, and a small "Listening…" pill with a mic level meter sits at the
 bottom of the screen while you speak, ringed in the app's rose accent (a spinner while transcribing). Both are configurable under `feedback`.
+The screenshots above are rendered from the real pill views with `just-speak render-pill docs`.
 
 Menu bar icon: 🎤 idle · rose mic recording · ⋯ processing · ⚠︎ something needs attention (open the menu).
 
