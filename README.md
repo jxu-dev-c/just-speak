@@ -13,7 +13,8 @@ Hold a key, speak, let go — your words appear, cleaned up, wherever the cursor
   your pauses so little is left at release. Audio never leaves your Mac (~1 GB while loaded).
   Switch `asr.provider` to `openai` to stream to OpenAI
   [`gpt-live-transcribe`](https://developers.openai.com/api/docs/models/gpt-live-transcribe) instead (~15 MB,
-  but ~0.6–0.8 s at release vs. ~0.2–0.5 s locally for a typical dictation).
+  but ~0.6–0.8 s at release vs. ~0.2–0.5 s locally for a typical dictation), or to `hybrid` to run both and
+  use whichever is faster for each dictation.
 - **Rewrite**: Inception Mercury 3 (`reasoning_effort: instant`) removes fillers, false starts and fixes
   punctuation without translating or answering what you said. Falls back to the raw transcript on any error.
 - **Clipboard untouched**: text is typed as synthetic Unicode keystrokes.
@@ -46,7 +47,7 @@ Releases and `build-app.sh` sign with the same self-signed identity, so these gr
 
 ### API keys
 
-- **OpenAI** (`OPENAI_API_KEY`), only with `asr.provider: "openai"`: create one at
+- **OpenAI** (`OPENAI_API_KEY`), only with `asr.provider: "openai"` or `"hybrid"`: create one at
   [platform.openai.com/api-keys](https://platform.openai.com/api-keys).
 - **Inception** (`INCEPTION_API_KEY`), for the rewrite step: sign up at [Inception](https://www.inceptionlabs.ai)
   and create one in their dashboard. Without a key, dictation still works: you get the raw transcript, and the menu bar
@@ -70,6 +71,15 @@ To stream audio to OpenAI instead of transcribing on-device, add `OPENAI_API_KEY
 `"asr": {"provider": "openai"}` in `config.json`. The app then stays at ~15 MB and never loads the local model,
 but each dictation waits ~0.6–0.8 s at release for OpenAI's final transcript (see "Numbers" below).
 
+### Hybrid (optional)
+
+`"asr": {"provider": "hybrid"}` decodes locally as usual and also streams the audio to OpenAI, without
+committing it. At release it checks how much audio is still left to decode locally. With up to
+`asr.hybrid.localMaxMs` (6 s) left and the model loaded, it uses the local result alone and never requests
+OpenAI's transcript. With more left (a long stretch of speech without a pause), or while the model is still
+loading after being idle, it commits OpenAI as well and takes whichever transcript arrives first. It needs both
+the local model and an OpenAI key (without a key it is just local), and keeps the model loaded (~1 GB).
+
 ### Build from source
 
 ```sh
@@ -79,8 +89,9 @@ scripts/build-app.sh --install   # build, sign, copy to /Applications, link /usr
 
 ## Privacy
 
-With `asr.provider: "local"` (the default), audio never leaves your Mac. With `"openai"`, the **audio** of each
-dictation is streamed to OpenAI's API while you hold the key; a recording with no speech in it is never committed.
+With `asr.provider: "local"` (the default), audio never leaves your Mac. With `"openai"` or `"hybrid"`, the
+**audio** of each dictation is streamed to OpenAI's API while you hold the key; a recording with no speech in it is
+never committed, and in hybrid mode only dictations that race OpenAI are.
 When `rewrite.enabled` is on (the default), the **transcript text** is sent to Inception's
 API for cleanup. Set `rewrite.enabled` to `false` to stay fully offline. History stays on disk in
 `~/Library/Application Support/just-speak/history/` as plain JSON (owner-only permissions), and
@@ -91,7 +102,7 @@ the log records only timings and sizes, never what you said.
 - macOS 14+ on Apple Silicon (prebuilt sherpa-onnx libraries are arm64)
 - Xcode or the Swift 6 toolchain (building from source only)
 - ~1.1 GB disk for the speech model, and `uv` or `python3` for its one-off conversion (`just-speak setup`)
-- An [Inception](https://www.inceptionlabs.ai) API key for the rewrite step; an OpenAI API key only with `asr.provider: "openai"`
+- An [Inception](https://www.inceptionlabs.ai) API key for the rewrite step; an OpenAI API key only with `asr.provider: "openai"` or `"hybrid"`
 
 ## Numbers (M5)
 
@@ -148,7 +159,7 @@ Config: `~/.config/just-speak/config.json` — see [`config.example.json`](confi
 
 ```sh
 just-speak history --since 7d          # print (add --raw for the pre-rewrite text, --json, --grep)
-just-speak transcribe a.wav b.wav      # ASR only (same path as the app), with timings; --provider openai|local
+just-speak transcribe a.wav b.wav      # ASR only (same path as the app), with timings; --provider openai|local|hybrid
                                        #   --realtime: feed at speaking pace (true release latency); --whole: one pass (local)
 just-speak rewrite "um so like hello"  # rewrite only
 just-speak config-path

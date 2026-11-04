@@ -22,6 +22,9 @@ import Testing
     #expect(c.asr.openai.languages == ["en"])
     #expect(c.asr.openai.model == "gpt-live-transcribe")  // sibling key keeps its default
     #expect(c.asr.modelDir == Config().asr.modelDir)
+    let h = try Config.decode(Data(#"{"asr": {"provider": "hybrid", "hybrid": {"localMaxMs": 4000}}}"#.utf8))
+    #expect(h.asr.provider == .hybrid && h.asr.hybrid.localMaxMs == 4000)
+    #expect(Config().asr.hybrid.localMaxMs == 6000)
   }
 
   @Test func json5CommentsAndTrailingCommas() throws {

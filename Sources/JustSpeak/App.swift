@@ -13,7 +13,7 @@ enum App {
   }
 }
 
-/// hotkey → record → Fun-ASR-Nano (or OpenAI realtime transcription) → Mercury rewrite → type into focused app → local history.
+/// hotkey → record → Fun-ASR-Nano (or OpenAI realtime transcription, or both) → Mercury rewrite → type into focused app → local history.
 @MainActor
 final class AppController: NSObject, NSApplicationDelegate {
   private enum State {
@@ -102,10 +102,18 @@ final class AppController: NSObject, NSApplicationDelegate {
     case .openai:
       return try openAI.makeSession()
     case .local:
-      return DictationSession(
-        transcriber: transcriber, vadModel: config.vadModelURL,
-        options: DecodeOptions(hotwords: config.hotwords, language: config.asr.language, itn: config.asr.itn))
+      return makeLocalDictation()
+    case .hybrid:
+      // without an OpenAI key, hybrid is just local (the log line says cloud=none)
+      return HybridDictation(local: makeLocalDictation(), cloud: try? openAI.makeSession(), transcriber: transcriber,
+                             localMaxMs: config.asr.hybrid.localMaxMs)
     }
+  }
+
+  private func makeLocalDictation() -> DictationSession {
+    DictationSession(
+      transcriber: transcriber, vadModel: config.vadModelURL,
+      options: DecodeOptions(hotwords: config.hotwords, language: config.asr.language, itn: config.asr.itn))
   }
 
   private func beginRecording() {
@@ -149,7 +157,7 @@ final class AppController: NSObject, NSApplicationDelegate {
       self.announced = true
       self.playSound(self.config.feedback.startSound)
       if self.config.feedback.pill { self.orb.showListening() }
-      if self.config.asr.provider == .local { self.transcriber.preload() }
+      if self.config.asr.provider != .openai { self.transcriber.preload() }
       if self.config.rewrite.enabled { self.rewriter.warmUp() }
     }
     preloadWork = work
@@ -268,7 +276,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     if new.hotkey.key != old.hotkey.key { hotkey.setKey(new.hotkey.key) }
     if new.asr != old.asr {
       transcriber.update(spec: modelSpec(new), unloadAfterIdleMinutes: new.asr.unloadAfterIdleMinutes)
-      if new.asr.provider == .openai && old.asr.provider == .local { transcriber.unload() }
+      if new.asr.provider == .openai && old.asr.provider != .openai { transcriber.unload() }
     }
     if new.asr.openai != old.asr.openai || new.hotwords != old.hotwords { openAI = makeOpenAI(new) }
     if new.rewrite != old.rewrite { rewriter = Rewriter(config: new.rewrite, apiKey: new.resolvedAPIKey()) }

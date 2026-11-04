@@ -13,7 +13,8 @@
   "hotwords": ["Inception", "Mercury", "sherpa-onnx"],
 
   "asr": {
-    "provider": "local",       // local = Fun-ASR-Nano on this Mac (run `just-speak setup`); openai = stream audio to OpenAI
+    "provider": "local",       // local = Fun-ASR-Nano on this Mac (run `just-speak setup`); openai = stream audio to OpenAI;
+                               // hybrid = both, using whichever is faster per dictation (needs the model and an OpenAI key)
     "openai": {
       "model": "gpt-live-transcribe",
       "delay": "medium",       // minimal | low | medium | high | xhigh — accuracy vs. how soon text streams back
@@ -22,6 +23,9 @@
       "apiKey": "",            // "" = OPENAI_API_KEY from env or ~/.config/just-speak/.env
       "timeoutMs": 6000,       // from release to the final transcript
       "retryModel": "gpt-transcribe",  // on failure, send the whole clip once more to this model; "" = no retry
+    },
+    "hybrid": {
+      "localMaxMs": 6000,      // at release, up to this much audio left to decode → local alone; more → race OpenAI too
     },
 
     // local provider only

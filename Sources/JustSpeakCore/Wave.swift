@@ -27,6 +27,36 @@ public enum Resample {
   }
 }
 
+/// `Resample.linear` for a stream fed in blocks, continuous across block boundaries.
+public struct StreamResampler: Sendable {
+  private let step: Double   // input samples per output sample
+  private var last: Float?   // final sample of the previous block
+  private var pos = 0.0      // next output's position, in samples from the start of the next block
+
+  public init(from: Int, to: Int) {
+    step = Double(from) / Double(to)
+  }
+
+  public mutating func process(_ block: [Float]) -> [Float] {
+    guard !block.isEmpty else { return [] }
+    // With a previous block, index 0 is its last sample, so the first outputs interpolate across the seam.
+    let v = last.map { [$0] + block } ?? block
+    let offset = last == nil ? 0.0 : 1.0
+    var out: [Float] = []
+    out.reserveCapacity(Int(Double(block.count) / step) + 1)
+    var x = pos + offset
+    while x <= Double(v.count - 1) {
+      let j = Int(x)
+      let next = v[min(j + 1, v.count - 1)]
+      out.append(v[j] + (next - v[j]) * Float(x - Double(j)))
+      x += step
+    }
+    pos = x - offset - Double(block.count)
+    last = block.last
+    return out
+  }
+}
+
 public enum ProcessStats {
   /// Physical footprint in MB — the number Activity Monitor shows as "Memory".
   public static var footprintMB: Double {

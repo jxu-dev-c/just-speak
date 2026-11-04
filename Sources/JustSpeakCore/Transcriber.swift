@@ -1,6 +1,7 @@
 import CSherpaOnnx
 import Darwin
 import Foundation
+import os
 
 public enum TranscriberError: Error, CustomStringConvertible {
   case missingModelFile(String)
@@ -118,6 +119,8 @@ public final class Transcriber: @unchecked Sendable {
   private var spec: ModelSpec
   private var idleMinutes: Int
   private var unloadWork: DispatchWorkItem?
+  /// Mirrors `model != nil`, readable without waiting behind a decode on `queue`.
+  private let loaded = OSAllocatedUnfairLock(initialState: false)
 
   public init(spec: ModelSpec, unloadAfterIdleMinutes: Int) {
     self.spec = spec
@@ -164,6 +167,9 @@ public final class Transcriber: @unchecked Sendable {
     queue.async { self.unloadLocked(reason: "requested") }
   }
 
+  /// Whether a decode can start without loading the model first (a load takes ~1–3 s).
+  public var isLoaded: Bool { loaded.withLock { $0 } }
+
   private func ensureLoadedLocked() throws -> FunASRNano {
     unloadWork?.cancel()
     if let model, loadedSpec == spec { return model }
@@ -174,6 +180,7 @@ public final class Transcriber: @unchecked Sendable {
     Log.info("asr model loaded in \(sw.ms)ms threads=\(spec.numThreads)")
     model = m
     loadedSpec = spec
+    loaded.withLock { $0 = true }
     return m
   }
 
@@ -190,6 +197,7 @@ public final class Transcriber: @unchecked Sendable {
     guard model != nil else { return }
     model = nil
     loadedSpec = nil
+    loaded.withLock { $0 = false }
     // Hand freed pages back to the OS so RSS actually drops.
     malloc_zone_pressure_relief(nil, 0)
     Log.info("asr model unloaded (\(reason))")

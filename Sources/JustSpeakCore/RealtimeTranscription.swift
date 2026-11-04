@@ -1,11 +1,12 @@
 import Accelerate
 import Foundation
 
-public enum RealtimeError: Error, CustomStringConvertible, Sendable {
+public enum RealtimeError: Error, CustomStringConvertible, Equatable, Sendable {
   case missingAPIKey
   case server(String)
   case connection(String)
   case timeout
+  case cancelled
 
   public var description: String {
     switch self {
@@ -13,6 +14,7 @@ public enum RealtimeError: Error, CustomStringConvertible, Sendable {
     case .server(let msg): return "OpenAI transcription: \(msg)"
     case .connection(let msg): return "OpenAI connection: \(msg)"
     case .timeout: return "OpenAI transcription timed out"
+    case .cancelled: return "OpenAI transcription cancelled"
     }
   }
 }
@@ -261,7 +263,7 @@ public final class CloudDictation: Dictation, @unchecked Sendable {
       text = try await finalTranscript(requireSpeech: true)
     } catch {
       let retryModel = transcriber.config.retryModel
-      guard !retryModel.isEmpty else { throw error }
+      guard !retryModel.isEmpty, (error as? RealtimeError) != .cancelled else { throw error }
       Log.info("asr stream failed after \(sw.ms)ms (\(error)); retrying with \(retryModel)")
       retried = " retry=\(retryModel)"
       text = try await transcriber.transcribe(pcm: audio, model: retryModel)
@@ -271,8 +273,10 @@ public final class CloudDictation: Dictation, @unchecked Sendable {
                            logDetail: "final=\(sw.ms)ms speech=\(speechMs)ms deltas=\(deltas)\(retried)")
   }
 
+  /// Also ends a `finish` in progress (without its retry), e.g. when the hybrid's local decode won.
   public func cancel() {
     queue.async {
+      self.resolveLocked(.failure(.cancelled))
       self.closeLocked()
       self.pcm = Data()
     }

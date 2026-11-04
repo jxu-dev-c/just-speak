@@ -6,7 +6,7 @@ enum CLI {
     usage: just-speak                     run the menu-bar app
            just-speak setup                  download the local speech model (~1 GB, once; asr.provider "local")
            just-speak history [--since 7d|2026-10-01] [--grep TEXT] [--raw] [--json]
-           just-speak transcribe [--provider openai|local] [--hotwords a,b] [--realtime]
+           just-speak transcribe [--provider openai|local|hybrid] [--hotwords a,b] [--realtime]
                                  [--threads N] [--whole] FILE.wav...
            just-speak rewrite TEXT           (or text on stdin)
            just-speak config-path
@@ -136,7 +136,7 @@ enum CLI {
       switch a {
       case "--provider":
         guard let p = it.next().flatMap(Config.ASR.Provider.init(rawValue:)) else {
-          throw ConfigError.invalid("--provider takes openai or local")
+          throw ConfigError.invalid("--provider takes openai, local or hybrid")
         }
         config.asr.provider = p
       case "--threads": config.asr.numThreads = Int(it.next() ?? "") ?? config.asr.numThreads
@@ -185,6 +185,19 @@ enum CLI {
     for f in files {
       guard let w = Wave.read(f), w.sampleRate == SpeechChunker.sampleRate else {
         print("cannot read \(f) (need 16 kHz mono 16-bit WAV)")
+        continue
+      }
+      if config.asr.provider == .hybrid {
+        let openAI = OpenAITranscriber(config: config.asr.openai, hotwords: config.hotwords,
+                                       apiKey: config.resolvedOpenAIKey())
+        let session = HybridDictation(
+          local: DictationSession(transcriber: transcriber, vadModel: config.vadModelURL, options: opts),
+          cloud: try openAI.makeSession(), transcriber: transcriber, localMaxMs: config.asr.hybrid.localMaxMs)
+        try await feed(w.samples, to: session, realtime: realtime)
+        let t = Stopwatch()
+        let result = try await session.finish()
+        report(f, audioMs: result.durationMs, asrMs: t.ms, chunks: 0, text: result.text)
+        print("  \(result.logDetail)")
         continue
       }
       let session = DictationSession(transcriber: transcriber, vadModel: config.vadModelURL, options: opts)

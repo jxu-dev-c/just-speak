@@ -11,7 +11,7 @@ public struct Config: Codable, Equatable, Sendable {
   }
 
   public struct ASR: Codable, Equatable, Sendable {
-    public enum Provider: String, Codable, Sendable { case openai, local }
+    public enum Provider: String, Codable, Sendable { case openai, local, hybrid }
 
     /// OpenAI realtime transcription (see RealtimeTranscription.swift).
     public struct OpenAI: Codable, Equatable, Sendable {
@@ -31,12 +31,22 @@ public struct Config: Codable, Equatable, Sendable {
       public var retryModel = "gpt-transcribe"
     }
 
-    /// local = Fun-ASR-Nano on this Mac (needs `just-speak setup`); openai = stream audio to OpenAI.
+    /// Both at once (see HybridDictation.swift): local decodes, audio streams to OpenAI uncommitted.
+    public struct Hybrid: Codable, Equatable, Sendable {
+      /// At release, with at most this much audio left to decode locally (and the model loaded), use local
+      /// alone; past it, commit OpenAI too and take whichever finishes first. OpenAI never answers sooner
+      /// than ~0.5 s after commit, about what a 6 s local decode takes, so a lower value only adds cost.
+      public var localMaxMs = 6000
+    }
+
+    /// local = Fun-ASR-Nano on this Mac (needs `just-speak setup`); openai = stream audio to OpenAI;
+    /// hybrid = both, picking the faster one per dictation (needs the model and an OpenAI key).
     /// Local is the default: OpenAI holds the final transcript ~0.5–0.8 s after release, slower than a
     /// local decode of a typical 2–5 s dictation (~0.2–0.45 s).
     public var provider = Provider.local
     public var openai = OpenAI()
-    // The keys below apply to the local provider only.
+    public var hybrid = Hybrid()
+    // The keys below apply to the local (and hybrid) provider only.
     public var modelDir = "~/Library/Application Support/just-speak/models/funasr-nano-int8-mmap"
     /// Silero VAD, used to split long dictation at pauses (see SpeechChunker).
     public var vadModel = "~/Library/Application Support/just-speak/models/silero_vad.onnx"
