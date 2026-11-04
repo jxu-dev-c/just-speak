@@ -31,8 +31,10 @@ public struct Config: Codable, Equatable, Sendable {
       public var retryModel = "gpt-transcribe"
     }
 
-    /// openai = stream audio to OpenAI; local = Fun-ASR-Nano on this Mac (needs `just-speak setup`).
-    public var provider = Provider.openai
+    /// local = Fun-ASR-Nano on this Mac (needs `just-speak setup`); openai = stream audio to OpenAI.
+    /// Local is the default: OpenAI holds the final transcript ~0.5–0.8 s after release, slower than a
+    /// local decode of a typical 2–5 s dictation (~0.2–0.45 s).
+    public var provider = Provider.local
     public var openai = OpenAI()
     // The keys below apply to the local provider only.
     public var modelDir = "~/Library/Application Support/just-speak/models/funasr-nano-int8-mmap"

@@ -13,7 +13,7 @@
   "hotwords": ["Inception", "Mercury", "sherpa-onnx"],
 
   "asr": {
-    "provider": "openai",      // openai = stream audio to OpenAI; local = Fun-ASR-Nano on this Mac (run `just-speak setup`)
+    "provider": "local",       // local = Fun-ASR-Nano on this Mac (run `just-speak setup`); openai = stream audio to OpenAI
     "openai": {
       "model": "gpt-live-transcribe",
       "delay": "medium",       // minimal | low | medium | high | xhigh — accuracy vs. how soon text streams back

@@ -15,10 +15,10 @@ import Testing
     #expect(c.rewrite.model == "mercury-3")
   }
 
-  @Test func asrDefaultsToOpenAIAndMergesNestedKeys() throws {
-    #expect(Config().asr.provider == .openai)
-    let c = try Config.decode(Data(#"{"asr": {"provider": "local", "openai": {"languages": ["en"]}}}"#.utf8))
-    #expect(c.asr.provider == .local)
+  @Test func asrDefaultsToLocalAndMergesNestedKeys() throws {
+    #expect(Config().asr.provider == .local)
+    let c = try Config.decode(Data(#"{"asr": {"provider": "openai", "openai": {"languages": ["en"]}}}"#.utf8))
+    #expect(c.asr.provider == .openai)
     #expect(c.asr.openai.languages == ["en"])
     #expect(c.asr.openai.model == "gpt-live-transcribe")  // sibling key keeps its default
     #expect(c.asr.modelDir == Config().asr.modelDir)

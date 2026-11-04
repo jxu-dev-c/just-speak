@@ -13,7 +13,7 @@ enum App {
   }
 }
 
-/// hotkey → record → OpenAI realtime transcription (or Fun-ASR-Nano) → Mercury rewrite → type into focused app → local history.
+/// hotkey → record → Fun-ASR-Nano (or OpenAI realtime transcription) → Mercury rewrite → type into focused app → local history.
 @MainActor
 final class AppController: NSObject, NSApplicationDelegate {
   private enum State {

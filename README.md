@@ -9,10 +9,11 @@ Hold a key, speak, let go — your words appear, cleaned up, wherever the cursor
   <img src="docs/orb-light.png" width="520" alt="The floating just-speak orb: dark glass with a band of light across the middle and an iridescent rim">
 </picture>
 
-- **Streaming ASR**: OpenAI [`gpt-live-transcribe`](https://developers.openai.com/api/docs/models/gpt-live-transcribe)
-  transcribes while you speak, so only the last words are left at release. The app stays at ~15 MB.
-  Switch `asr.provider` to `local` for on-device [Fun-ASR-Nano](https://github.com/FunAudioLLM/Fun-ASR) (int8) via
-  sherpa-onnx instead (~1 GB while loaded, nothing leaves your Mac).
+- **On-device ASR**: [Fun-ASR-Nano](https://github.com/FunAudioLLM/Fun-ASR) (int8) via sherpa-onnx, decoded at
+  your pauses so little is left at release. Audio never leaves your Mac (~1 GB while loaded).
+  Switch `asr.provider` to `openai` to stream to OpenAI
+  [`gpt-live-transcribe`](https://developers.openai.com/api/docs/models/gpt-live-transcribe) instead (~15 MB,
+  but ~0.6–0.8 s at release vs. ~0.2–0.5 s locally for a typical dictation).
 - **Rewrite**: Inception Mercury 3 (`reasoning_effort: instant`) removes fillers, false starts and fixes
   punctuation without translating or answering what you said. Falls back to the raw transcript on any error.
 - **Clipboard untouched**: text is typed as synthetic Unicode keystrokes.
@@ -23,8 +24,9 @@ Hold a key, speak, let go — your words appear, cleaned up, wherever the cursor
 
 ```sh
 brew install --cask jxu-dev-c/tap/just-speak
-mkdir -p ~/.config/just-speak    # API keys for transcription and rewrite; see "API keys" below
-printf 'OPENAI_API_KEY=sk-...\nINCEPTION_API_KEY=...\n' > ~/.config/just-speak/.env && chmod 600 ~/.config/just-speak/.env
+just-speak setup                 # speech model → ~/Library/Application Support/just-speak/models (~1 GB, once)
+mkdir -p ~/.config/just-speak    # API key for the rewrite step; see "API keys" below
+echo 'INCEPTION_API_KEY=...' > ~/.config/just-speak/.env && chmod 600 ~/.config/just-speak/.env
 open -a JustSpeak
 ```
 
@@ -44,8 +46,8 @@ Releases and `build-app.sh` sign with the same self-signed identity, so these gr
 
 ### API keys
 
-- **OpenAI** (`OPENAI_API_KEY`), for transcription: create one at
-  [platform.openai.com/api-keys](https://platform.openai.com/api-keys). Not needed with `asr.provider: "local"`.
+- **OpenAI** (`OPENAI_API_KEY`), only with `asr.provider: "openai"`: create one at
+  [platform.openai.com/api-keys](https://platform.openai.com/api-keys).
 - **Inception** (`INCEPTION_API_KEY`), for the rewrite step: sign up at [Inception](https://www.inceptionlabs.ai)
   and create one in their dashboard. Without a key, dictation still works: you get the raw transcript, and the menu bar
   shows ⚠︎ "rewrite failed" (set `rewrite.enabled` to `false` to turn the rewrite step off instead).
@@ -62,13 +64,11 @@ environment variable, then `~/.config/just-speak/.env`. Use the `.env` file for 
 Finder or `open` doesn't see variables exported in your shell profile. Keys are read at launch,
 so quit and reopen JustSpeak after changing them.
 
-### Local speech model (optional)
+### OpenAI transcription (optional)
 
-To transcribe on-device, download the model once and set `"asr": {"provider": "local"}` in `config.json`:
-
-```sh
-just-speak setup                 # model → ~/Library/Application Support/just-speak/models (~1 GB, once)
-```
+To stream audio to OpenAI instead of transcribing on-device, add `OPENAI_API_KEY` to the `.env` file and set
+`"asr": {"provider": "openai"}` in `config.json`. The app then stays at ~15 MB and never loads the local model,
+but each dictation waits ~0.6–0.8 s at release for OpenAI's final transcript (see "Numbers" below).
 
 ### Build from source
 
@@ -79,10 +79,10 @@ scripts/build-app.sh --install   # build, sign, copy to /Applications, link /usr
 
 ## Privacy
 
-With `asr.provider: "openai"` (the default), the **audio** of each dictation is streamed to OpenAI's API
-while you hold the key; a recording with no speech in it is never committed. With `"local"`, audio never
-leaves your Mac. When `rewrite.enabled` is on (the default), the **transcript text** is sent to Inception's
-API for cleanup. Use `"local"` and set `rewrite.enabled` to `false` to stay fully offline. History stays on disk in
+With `asr.provider: "local"` (the default), audio never leaves your Mac. With `"openai"`, the **audio** of each
+dictation is streamed to OpenAI's API while you hold the key; a recording with no speech in it is never committed.
+When `rewrite.enabled` is on (the default), the **transcript text** is sent to Inception's
+API for cleanup. Set `rewrite.enabled` to `false` to stay fully offline. History stays on disk in
 `~/Library/Application Support/just-speak/history/` as plain JSON (owner-only permissions), and
 the log records only timings and sizes, never what you said.
 
@@ -90,22 +90,10 @@ the log records only timings and sizes, never what you said.
 
 - macOS 14+ on Apple Silicon (prebuilt sherpa-onnx libraries are arm64)
 - Xcode or the Swift 6 toolchain (building from source only)
-- An OpenAI API key for transcription and an [Inception](https://www.inceptionlabs.ai) API key for the rewrite step
-- Local provider only: ~1.1 GB disk for the model, and `uv` or `python3` for its one-off conversion (`just-speak setup`)
+- ~1.1 GB disk for the speech model, and `uv` or `python3` for its one-off conversion (`just-speak setup`)
+- An [Inception](https://www.inceptionlabs.ai) API key for the rewrite step; an OpenAI API key only with `asr.provider: "openai"`
 
 ## Numbers (M5)
-
-OpenAI (`gpt-live-transcribe`, `delay: medium`):
-
-| | |
-|---|---|
-| Footprint | ~15 MB idle and while dictating |
-| ASR at release | ~0.6–0.8 s, however long you spoke (text streams back during speech) |
-| Rewrite | ~0.3–0.5 s |
-| Cost | $0.017 per minute of audio |
-
-`delay` barely moves release latency (minimal…xhigh all measured ~0.5–0.7 s), so it defaults to the more
-accurate `medium`.
 
 Local (Fun-ASR-Nano, 4 threads):
 
@@ -127,6 +115,18 @@ a single pass truncates past ~20 s. Silero VAD cuts a recording at the first pau
 whenever you pause, so release latency stays flat however long you talk. Silence is trimmed, and a
 recording with no speech is ignored.
 Keep `hotwords` to a few dozen entries — they share that context.
+
+OpenAI (`gpt-live-transcribe`, `delay: medium`):
+
+| | |
+|---|---|
+| Footprint | ~15 MB idle and while dictating |
+| ASR at release | ~0.5–0.8 s, however long you spoke: most text streams back during speech, but the final transcript arrives ~0.5–0.8 s after commit regardless |
+| Rewrite | ~0.3–0.5 s |
+| Cost | $0.017 per minute of audio |
+
+`delay` barely moves release latency (minimal…xhigh all measured ~0.5–0.7 s), so it defaults to the more
+accurate `medium`.
 
 ## Use
 
