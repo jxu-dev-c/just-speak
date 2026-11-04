@@ -13,7 +13,7 @@ enum App {
   }
 }
 
-/// hotkey → record → Fun-ASR-Nano → Mercury rewrite → type into focused app → local history.
+/// hotkey → record → OpenAI realtime transcription (or Fun-ASR-Nano) → Mercury rewrite → type into focused app → local history.
 @MainActor
 final class AppController: NSObject, NSApplicationDelegate {
   private enum State {
@@ -24,9 +24,10 @@ final class AppController: NSObject, NSApplicationDelegate {
 
   private var config = Config()
   private var state = State.idle
-  private var session: DictationSession?
+  private var session: (any Dictation)?
   private let recorder = AudioRecorder()
   private var transcriber: Transcriber!
+  private var openAI: OpenAITranscriber!
   private var rewriter: Rewriter!
   private var history: HistoryStore?
   private var hotkey: HotkeyMonitor!
@@ -57,6 +58,7 @@ final class AppController: NSObject, NSApplicationDelegate {
       status.set(.warning, message: "\(error) — using defaults")
     }
     transcriber = Transcriber(spec: modelSpec(config), unloadAfterIdleMinutes: config.asr.unloadAfterIdleMinutes)
+    openAI = makeOpenAI(config)
     rewriter = Rewriter(config: config.rewrite, apiKey: config.resolvedAPIKey())
     hotkey = HotkeyMonitor(key: config.hotkey.key)
     hotkey.onEvent = { [weak self] in self?.handle($0) }
@@ -78,6 +80,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     switch (config.hotkey.mode, event, state) {
     case (_, .cancelled, .recording):
       cancelRecording()
+    case (_, .released, .idle), (_, .cancelled, .idle):
+      preloadWork?.cancel()  // a pending "can't record" message for a press that turned out to be a tap
     case (.hold, .pressed, .idle), (.toggle, .pressed, .idle):
       beginRecording()
     case (.hold, .released, .recording(let startedAt, _)):
@@ -93,13 +97,33 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
   }
 
+  private func makeDictation() throws -> any Dictation {
+    switch config.asr.provider {
+    case .openai:
+      return try openAI.makeSession()
+    case .local:
+      return DictationSession(
+        transcriber: transcriber, vadModel: config.vadModelURL,
+        options: DecodeOptions(hotwords: config.hotwords, language: config.asr.language, itn: config.asr.itn))
+    }
+  }
+
   private func beginRecording() {
     let feedback = config.feedback
-    let session = DictationSession(
-      transcriber: transcriber, vadModel: config.vadModelURL,
-      options: DecodeOptions(hotwords: config.hotwords, language: config.asr.language, itn: config.asr.itn))
+    let session: any Dictation
+    let delay = config.hotkey.mode == .hold ? config.hotkey.minHoldMs : 0
     do {
-      try recorder.start { [weak self] samples in
+      session = try makeDictation()
+    } catch {
+      status.set(.warning, message: "\(error)")
+      // Only for a held press: a tap of the modifier (⌥←) shouldn't flash an error.
+      let work = DispatchWorkItem { [weak self] in self?.orb.showMessage("\(error)") }
+      preloadWork = work
+      DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(delay), execute: work)
+      return
+    }
+    do {
+      try recorder.start(sampleRate: session.sampleRate) { [weak self] samples in
         session.feed(samples)
         guard feedback.pill else { return }
         var rms: Float = 0
@@ -107,6 +131,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         Task { @MainActor in self?.orb.setLevel(rms) }
       }
     } catch {
+      session.cancel()
       status.set(.warning, message: "microphone: \(error.localizedDescription)")
       orb.showMessage("Microphone unavailable: \(error.localizedDescription)")
       return
@@ -117,17 +142,17 @@ final class AppController: NSObject, NSApplicationDelegate {
     state = .recording(startedAt: Date(), app: NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
     status.set(.recording)
     // Once the press has clearly become a dictation (not a stray tap of the modifier): give feedback,
-    // and load the model and open the HTTPS connection while the user is still talking.
+    // and load the local model and open the rewrite connection while the user is still talking.
+    // (The OpenAI socket is already connecting: a stray tap only costs a handshake.)
     let work = DispatchWorkItem { [weak self] in
       guard let self, case .recording = self.state else { return }
       self.announced = true
       self.playSound(self.config.feedback.startSound)
       if self.config.feedback.pill { self.orb.showListening() }
-      self.transcriber.preload()
+      if self.config.asr.provider == .local { self.transcriber.preload() }
       if self.config.rewrite.enabled { self.rewriter.warmUp() }
     }
     preloadWork = work
-    let delay = config.hotkey.mode == .hold ? config.hotkey.minHoldMs : 0
     DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(delay), execute: work)
   }
 
@@ -141,7 +166,8 @@ final class AppController: NSObject, NSApplicationDelegate {
   private func cancelRecording() {
     preloadWork?.cancel()
     recorder.stop()
-    session = nil  // chunks already handed to the ASR queue finish and are discarded
+    session?.cancel()
+    session = nil
     state = .idle
     status.set(.idle)
     if announced { orb.hide() }
@@ -163,10 +189,10 @@ final class AppController: NSObject, NSApplicationDelegate {
     Task { await process(session, app: app, config: cfg) }
   }
 
-  private func process(_ session: DictationSession, app: String?, config cfg: Config) async {
+  private func process(_ session: any Dictation, app: String?, config cfg: Config) async {
     defer { state = .idle }
     let total = Stopwatch()
-    let result: DictationSession.Result
+    let result: DictationResult
     do {
       result = try await session.finish()
     } catch {
@@ -175,7 +201,7 @@ final class AppController: NSObject, NSApplicationDelegate {
       if cfg.feedback.pill { orb.showMessage("Transcription failed: \(error)") }
       return
     }
-    let asrMs = total.ms  // only the not-yet-transcribed tail; earlier chunks ran during speech
+    let asrMs = total.ms  // only what was left at release; the rest was transcribed during speech
     let raw = result.text
     let durationMs = result.durationMs
     guard durationMs >= 300, !raw.isEmpty else {  // too short, or VAD heard no speech
@@ -211,8 +237,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     status.lastSummary = "Last: \(String(format: "%.1f", Double(durationMs) / 1000))s audio → "
       + "asr \(asrMs)ms" + (rewriteMs.map { " + rewrite \($0)ms" } ?? "") + " (total \(total.ms)ms)"
     Log.info("dictation audio=\(durationMs)ms asr=\(asrMs)ms rewrite=\(rewriteMs.map(String.init) ?? "-")ms "
-      + "total=\(total.ms)ms chunks=\(result.chunks.count) tail=\(result.tailMs)ms "
-      + "spec=\(result.tailReused ? "hit" : "miss") chars=\(text.count) "
+      + "total=\(total.ms)ms asr.provider=\(cfg.asr.provider.rawValue) \(result.logDetail) chars=\(text.count) "
       + "footprint=\(Int(ProcessStats.footprintMB))MB")
 
     history?.append(HistoryRecord(durationMs: durationMs, raw: raw, rewritten: rewritten, app: app,
@@ -223,6 +248,10 @@ final class AppController: NSObject, NSApplicationDelegate {
 
   private func modelSpec(_ c: Config) -> Transcriber.ModelSpec {
     .init(dir: c.modelDirURL, numThreads: c.asr.numThreads)
+  }
+
+  private func makeOpenAI(_ c: Config) -> OpenAITranscriber {
+    OpenAITranscriber(config: c.asr.openai, hotwords: c.hotwords, apiKey: c.resolvedOpenAIKey())
   }
 
   private func reloadConfig() {
@@ -239,7 +268,9 @@ final class AppController: NSObject, NSApplicationDelegate {
     if new.hotkey.key != old.hotkey.key { hotkey.setKey(new.hotkey.key) }
     if new.asr != old.asr {
       transcriber.update(spec: modelSpec(new), unloadAfterIdleMinutes: new.asr.unloadAfterIdleMinutes)
+      if new.asr.provider == .openai && old.asr.provider == .local { transcriber.unload() }
     }
+    if new.asr.openai != old.asr.openai || new.hotwords != old.hotwords { openAI = makeOpenAI(new) }
     if new.rewrite != old.rewrite { rewriter = Rewriter(config: new.rewrite, apiKey: new.resolvedAPIKey()) }
     if new.history != old.history { setUpHistory() }
     Log.info("config reloaded")

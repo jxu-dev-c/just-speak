@@ -15,6 +15,15 @@ import Testing
     #expect(c.rewrite.model == "mercury-3")
   }
 
+  @Test func asrDefaultsToOpenAIAndMergesNestedKeys() throws {
+    #expect(Config().asr.provider == .openai)
+    let c = try Config.decode(Data(#"{"asr": {"provider": "local", "openai": {"languages": ["en"]}}}"#.utf8))
+    #expect(c.asr.provider == .local)
+    #expect(c.asr.openai.languages == ["en"])
+    #expect(c.asr.openai.model == "gpt-live-transcribe")  // sibling key keeps its default
+    #expect(c.asr.modelDir == Config().asr.modelDir)
+  }
+
   @Test func json5CommentsAndTrailingCommas() throws {
     let c = try Config.decode(Data("""
       {
@@ -57,5 +66,20 @@ import Testing
     c.rewrite.apiKey = "from-config"
     #expect(c.resolvedAPIKey(env: ["INCEPTION_API_KEY": "from-env"], envFile: envFile) == "from-config")
     #expect(Config().resolvedAPIKey(env: [:], envFile: dir.appendingPathComponent("missing")) == nil)
+  }
+
+  @Test func openAIKeyResolutionOrder() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let envFile = dir.appendingPathComponent(".env")
+    try "INCEPTION_API_KEY=inception\nOPENAI_API_KEY='from-file'\n".write(to: envFile, atomically: true, encoding: .utf8)
+
+    var c = Config()
+    #expect(c.resolvedOpenAIKey(env: [:], envFile: envFile) == "from-file")
+    #expect(c.resolvedOpenAIKey(env: ["OPENAI_API_KEY": "from-env"], envFile: envFile) == "from-env")
+    c.asr.openai.apiKey = "from-config"
+    #expect(c.resolvedOpenAIKey(env: ["OPENAI_API_KEY": "from-env"], envFile: envFile) == "from-config")
+    #expect(c.resolvedAPIKey(env: [:], envFile: envFile) == "inception")
   }
 }

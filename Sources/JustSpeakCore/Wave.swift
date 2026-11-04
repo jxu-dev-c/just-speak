@@ -12,6 +12,21 @@ public enum Wave {
   }
 }
 
+public enum Resample {
+  /// Linear-interpolation resampling: good enough for feeding speech files to a recognizer.
+  public static func linear(_ samples: [Float], from: Int, to: Int) -> [Float] {
+    guard from != to, samples.count > 1 else { return samples }
+    let count = samples.count * to / from
+    let step = Double(from) / Double(to)
+    return (0..<count).map { i in
+      let x = Double(i) * step
+      let j = min(Int(x), samples.count - 1)
+      let next = samples[min(j + 1, samples.count - 1)]
+      return samples[j] + (next - samples[j]) * Float(x - Double(j))
+    }
+  }
+}
+
 public enum ProcessStats {
   /// Physical footprint in MB — the number Activity Monitor shows as "Memory".
   public static var footprintMB: Double {

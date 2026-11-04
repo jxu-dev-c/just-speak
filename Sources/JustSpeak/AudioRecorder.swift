@@ -1,14 +1,10 @@
 @preconcurrency import AVFoundation
 import JustSpeakCore
 
-/// Captures the default input device as 16 kHz mono Float32 and streams it to a callback. The engine
+/// Captures the default input device as mono Float32 at the requested rate and streams it to a callback. The engine
 /// runs only while recording, so the mic indicator is off and no audio thread is alive between dictations.
 final class AudioRecorder: @unchecked Sendable {
-  static let sampleRate = 16_000.0
-
   private var engine = AVAudioEngine()
-  private let target = AVAudioFormat(
-    commonFormat: .pcmFormatFloat32, sampleRate: AudioRecorder.sampleRate, channels: 1, interleaved: false)!
   private var configObserver: NSObjectProtocol?
   private var needsRebuild = false
 
@@ -22,18 +18,20 @@ final class AudioRecorder: @unchecked Sendable {
     await AVCaptureDevice.requestAccess(for: .audio)
   }
 
-  func start(onSamples: @escaping @Sendable ([Float]) -> Void) throws {
+  /// `sampleRate`: 16 kHz for the local model, 24 kHz for OpenAI.
+  func start(sampleRate: Int, onSamples: @escaping @Sendable ([Float]) -> Void) throws {
     if needsRebuild { rebuildEngine() }
     let input = engine.inputNode
     let format = input.outputFormat(forBus: 0)
+    let target = AVAudioFormat(
+      commonFormat: .pcmFormatFloat32, sampleRate: Double(sampleRate), channels: 1, interleaved: false)!
     guard format.sampleRate > 0, let converter = AVAudioConverter(from: format, to: target) else {
       throw NSError(domain: "just-speak", code: 1, userInfo: [NSLocalizedDescriptionKey: "no usable input device"])
     }
     let ratio = target.sampleRate / format.sampleRate
-    input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
-      guard let self else { return }
+    input.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
       let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 32
-      guard let out = AVAudioPCMBuffer(pcmFormat: self.target, frameCapacity: capacity) else { return }
+      guard let out = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: capacity) else { return }
       // the input block is invoked synchronously within convert(), never concurrently
       nonisolated(unsafe) var fed = false
       var error: NSError?
