@@ -1,10 +1,36 @@
 import Foundation
 
-/// One dictation: buffers audio as it arrives, cuts it into chunks at pauses and starts transcribing
+/// One recording, from hotkey-down to transcript: local (`DictationSession`) or cloud (`CloudDictation`).
+public protocol Dictation: AnyObject, Sendable {
+  /// Rate `feed` expects, in Hz (mono Float32 in [-1, 1]).
+  var sampleRate: Int { get }
+  /// Append samples. Safe to call from the audio thread.
+  func feed(_ chunk: [Float])
+  /// Stop accepting audio and return the full transcript.
+  func finish() async throws -> DictationResult
+  /// Abandon the dictation; `finish` must not be called afterwards.
+  func cancel()
+}
+
+public struct DictationResult: Sendable {
+  /// Joined transcript; empty when no speech was detected.
+  public var text: String
+  public var durationMs: Int
+  /// Provider-specific timing details for the log.
+  public var logDetail: String
+
+  public init(text: String, durationMs: Int, logDetail: String) {
+    self.text = text
+    self.durationMs = durationMs
+    self.logDetail = logDetail
+  }
+}
+
+/// One local dictation: buffers audio as it arrives, cuts it into chunks at pauses and starts transcribing
 /// each finished chunk immediately, so by the time the hotkey is released only the tail is left.
 /// The tail itself is decoded speculatively whenever the speaker pauses; if nothing is said before
 /// release, that result is used as is.
-public final class DictationSession: @unchecked Sendable {
+public final class DictationSession: Dictation, @unchecked Sendable {
   private let queue = DispatchQueue(label: "just-speak.session", qos: .userInitiated)
   private let transcriber: Transcriber
   private let options: DecodeOptions
@@ -30,6 +56,8 @@ public final class DictationSession: @unchecked Sendable {
       }
     }
   }
+
+  public var sampleRate: Int { SpeechChunker.sampleRate }
 
   /// Append 16 kHz mono samples. Safe to call from the audio thread; work happens on the session queue.
   public func feed(_ chunk: [Float]) {
@@ -57,8 +85,17 @@ public final class DictationSession: @unchecked Sendable {
     public var tailReused: Bool
   }
 
-  /// Stop accepting audio and return the full transcript.
-  public func finish() async throws -> Result {
+  /// Chunks already handed to the ASR queue finish and are discarded.
+  public func cancel() {}
+
+  public func finish() async throws -> DictationResult {
+    let r = try await finishWithChunks()
+    return DictationResult(text: r.text, durationMs: r.durationMs,
+                           logDetail: "chunks=\(r.chunks.count) tail=\(r.tailMs)ms spec=\(r.tailReused ? "hit" : "miss")")
+  }
+
+  /// Stop accepting audio and return the full transcript, with how it was cut into chunks.
+  public func finishWithChunks() async throws -> Result {
     let (tasks, total, ranges, tailMs, reused) = await withCheckedContinuation { cont in
       queue.async {
         var tailMs = 0

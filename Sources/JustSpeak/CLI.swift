@@ -4,9 +4,10 @@ import JustSpeakCore
 enum CLI {
   static let usage = """
     usage: just-speak                     run the menu-bar app
-           just-speak setup                  download the speech model (~1 GB, once)
+           just-speak setup                  download the local speech model (~1 GB, once; asr.provider "local")
            just-speak history [--since 7d|2026-10-01] [--grep TEXT] [--raw] [--json]
-           just-speak transcribe [--threads N] [--hotwords a,b] [--whole | --realtime] FILE.wav...
+           just-speak transcribe [--provider openai|local] [--hotwords a,b] [--realtime]
+                                 [--threads N] [--whole] FILE.wav...
            just-speak rewrite TEXT           (or text on stdin)
            just-speak config-path
            just-speak render-orb DIR        write the README screenshots of the orb (light and dark)
@@ -121,30 +122,53 @@ enum CLI {
     return f.date(from: s)
   }
 
-  /// Runs the same chunked pipeline as the app, feeding each file in 100 ms blocks like the mic does.
-  /// `--whole` decodes each file in one pass instead (no VAD), for comparison.
+  /// Runs the same pipeline as the app, feeding each file in 100 ms blocks like the mic does; the reported
+  /// asr time is what is left after the last block, i.e. the latency at hotkey release.
+  /// Local only: `--whole` decodes each file in one pass instead (no VAD), `--ep` picks the onnxruntime provider.
   static func transcribe(_ args: [String]) async throws -> Int32 {
     var config = try Config.loadOrCreate()
     var files: [String] = []
-    var provider = "cpu"
+    var executionProvider = "cpu"
     var whole = false
     var realtime = false
     var it = args.makeIterator()
     while let a = it.next() {
       switch a {
+      case "--provider":
+        guard let p = it.next().flatMap(Config.ASR.Provider.init(rawValue:)) else {
+          throw ConfigError.invalid("--provider takes openai or local")
+        }
+        config.asr.provider = p
       case "--threads": config.asr.numThreads = Int(it.next() ?? "") ?? config.asr.numThreads
-      case "--provider": provider = it.next() ?? provider
+      case "--ep": executionProvider = it.next() ?? executionProvider
       case "--hotwords": config.hotwords = (it.next() ?? "").split(separator: ",").map(String.init)
       case "--whole": whole = true
       case "--realtime": realtime = true
       default: files.append(a)
       }
     }
+    if config.asr.provider == .openai {
+      let openAI = OpenAITranscriber(config: config.asr.openai, hotwords: config.hotwords,
+                                     apiKey: config.resolvedOpenAIKey())
+      for f in files {
+        guard let w = Wave.read(f) else { print("cannot read \(f)"); continue }
+        let session = try openAI.makeSession()
+        try await feed(Resample.linear(w.samples, from: w.sampleRate, to: session.sampleRate), to: session,
+                       realtime: realtime)
+        let t = Stopwatch()
+        let result = try await session.finish()
+        report(f, audioMs: result.durationMs, asrMs: t.ms, chunks: 1, text: result.text)
+        print("  \(result.logDetail)")
+      }
+      return 0
+    }
+
     let opts = DecodeOptions(hotwords: config.hotwords, language: config.asr.language, itn: config.asr.itn)
     let sw = Stopwatch()
 
     if whole {
-      let model = try FunASRNano(modelDir: config.modelDirURL, numThreads: config.asr.numThreads, provider: provider)
+      let model = try FunASRNano(modelDir: config.modelDirURL, numThreads: config.asr.numThreads,
+                                 provider: executionProvider)
       print(String(format: "load %dms  footprint %.0fMB", sw.ms, ProcessStats.footprintMB))
       for f in files {
         guard let w = Wave.read(f) else { print("cannot read \(f)"); continue }
@@ -164,19 +188,23 @@ enum CLI {
         continue
       }
       let session = DictationSession(transcriber: transcriber, vadModel: config.vadModelURL, options: opts)
-      let block = SpeechChunker.sampleRate / 10
-      for i in stride(from: 0, to: w.samples.count, by: block) {
-        session.feed(Array(w.samples[i..<min(i + block, w.samples.count)]))
-        if realtime { try await Task.sleep(for: .milliseconds(100)) }  // pace like a live mic
-      }
+      try await feed(w.samples, to: session, realtime: realtime)
       let t = Stopwatch()
-      let result = try await session.finish()
+      let result = try await session.finishWithChunks()
       let spans = result.chunks.map { String(format: "%.1f–%.1fs", Double($0.lowerBound) / 16000, Double($0.upperBound) / 16000) }
       report(f, audioMs: result.durationMs, asrMs: t.ms, chunks: result.chunks.count, text: result.text)
       print("  chunks: \(spans.joined(separator: ", "))  tail \(result.tailMs)ms"
         + (result.tailReused ? " (decoded before release)" : ""))
     }
     return 0
+  }
+
+  private static func feed(_ samples: [Float], to session: any Dictation, realtime: Bool) async throws {
+    let block = session.sampleRate / 10
+    for i in stride(from: 0, to: samples.count, by: block) {
+      session.feed(Array(samples[i..<min(i + block, samples.count)]))
+      if realtime { try await Task.sleep(for: .milliseconds(100)) }  // pace like a live mic
+    }
   }
 
   private static func report(_ file: String, audioMs: Int, asrMs: Int, chunks: Int, text: String) {

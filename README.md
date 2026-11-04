@@ -9,8 +9,10 @@ Hold a key, speak, let go — your words appear, cleaned up, wherever the cursor
   <img src="docs/orb-light.png" width="520" alt="The floating just-speak orb: dark glass with a band of light across the middle and an iridescent rim">
 </picture>
 
-- **On-device ASR**: [Fun-ASR-Nano](https://github.com/FunAudioLLM/Fun-ASR) (int8) via sherpa-onnx.
-  Chinese, English, Japanese, dialects and code-switching.
+- **Streaming ASR**: OpenAI [`gpt-live-transcribe`](https://developers.openai.com/api/docs/models/gpt-live-transcribe)
+  transcribes while you speak, so only the last words are left at release. The app stays at ~15 MB.
+  Switch `asr.provider` to `local` for on-device [Fun-ASR-Nano](https://github.com/FunAudioLLM/Fun-ASR) (int8) via
+  sherpa-onnx instead (~1 GB while loaded, nothing leaves your Mac).
 - **Rewrite**: Inception Mercury 3 (`reasoning_effort: instant`) removes fillers, false starts and fixes
   punctuation without translating or answering what you said. Falls back to the raw transcript on any error.
 - **Clipboard untouched**: text is typed as synthetic Unicode keystrokes.
@@ -21,9 +23,8 @@ Hold a key, speak, let go — your words appear, cleaned up, wherever the cursor
 
 ```sh
 brew install --cask jxu-dev-c/tap/just-speak
-just-speak setup                 # model → ~/Library/Application Support/just-speak/models (~1 GB, once)
-mkdir -p ~/.config/just-speak    # API key for the rewrite step; see "Inception API key" below
-echo 'INCEPTION_API_KEY=your-key-here' > ~/.config/just-speak/.env && chmod 600 ~/.config/just-speak/.env
+mkdir -p ~/.config/just-speak    # API keys for transcription and rewrite; see "API keys" below
+printf 'OPENAI_API_KEY=sk-...\nINCEPTION_API_KEY=...\n' > ~/.config/just-speak/.env && chmod 600 ~/.config/just-speak/.env
 open -a JustSpeak
 ```
 
@@ -41,23 +42,33 @@ Grant the two permissions it asks for (System Settings → Privacy & Security):
 prompt only once; afterwards the menu's "Grant permissions…" opens the right Settings pane.
 Releases and `build-app.sh` sign with the same self-signed identity, so these grants survive upgrades and rebuilds.
 
-### Inception API key
+### API keys
 
-The rewrite step needs an API key from [Inception](https://www.inceptionlabs.ai): sign up and create one in
-their dashboard. Without a key, dictation still works: you get the raw transcript, and the menu bar
-shows ⚠︎ "rewrite failed" (set `rewrite.enabled` to `false` to turn the rewrite step off instead).
+- **OpenAI** (`OPENAI_API_KEY`), for transcription: create one at
+  [platform.openai.com/api-keys](https://platform.openai.com/api-keys). Not needed with `asr.provider: "local"`.
+- **Inception** (`INCEPTION_API_KEY`), for the rewrite step: sign up at [Inception](https://www.inceptionlabs.ai)
+  and create one in their dashboard. Without a key, dictation still works: you get the raw transcript, and the menu bar
+  shows ⚠︎ "rewrite failed" (set `rewrite.enabled` to `false` to turn the rewrite step off instead).
 
 ```sh
 mkdir -p ~/.config/just-speak
-echo 'INCEPTION_API_KEY=your-key-here' > ~/.config/just-speak/.env
+printf 'OPENAI_API_KEY=sk-...\nINCEPTION_API_KEY=...\n' > ~/.config/just-speak/.env
 chmod 600 ~/.config/just-speak/.env
 just-speak rewrite "um so like hello"   # check: prints the cleaned-up text
 ```
 
-The key is looked up in this order: `rewrite.apiKey` in `config.json`, then the `INCEPTION_API_KEY`
+Each key is looked up in this order: `asr.openai.apiKey` / `rewrite.apiKey` in `config.json`, then the
 environment variable, then `~/.config/just-speak/.env`. Use the `.env` file for the app, since an app opened from
-Finder or `open` doesn't see variables exported in your shell profile. The key is read at launch,
-so quit and reopen JustSpeak after changing it.
+Finder or `open` doesn't see variables exported in your shell profile. Keys are read at launch,
+so quit and reopen JustSpeak after changing them.
+
+### Local speech model (optional)
+
+To transcribe on-device, download the model once and set `"asr": {"provider": "local"}` in `config.json`:
+
+```sh
+just-speak setup                 # model → ~/Library/Application Support/just-speak/models (~1 GB, once)
+```
 
 ### Build from source
 
@@ -68,9 +79,10 @@ scripts/build-app.sh --install   # build, sign, copy to /Applications, link /usr
 
 ## Privacy
 
-Audio never leaves your Mac: recording, voice activity detection and transcription run locally.
-When `rewrite.enabled` is on (the default), the **transcript text** of each dictation is sent to
-Inception's API for cleanup; set it to `false` to stay fully offline. History stays on disk in
+With `asr.provider: "openai"` (the default), the **audio** of each dictation is streamed to OpenAI's API
+while you hold the key; a recording with no speech in it is never committed. With `"local"`, audio never
+leaves your Mac. When `rewrite.enabled` is on (the default), the **transcript text** is sent to Inception's
+API for cleanup. Use `"local"` and set `rewrite.enabled` to `false` to stay fully offline. History stays on disk in
 `~/Library/Application Support/just-speak/history/` as plain JSON (owner-only permissions), and
 the log records only timings and sizes, never what you said.
 
@@ -78,10 +90,24 @@ the log records only timings and sizes, never what you said.
 
 - macOS 14+ on Apple Silicon (prebuilt sherpa-onnx libraries are arm64)
 - Xcode or the Swift 6 toolchain (building from source only)
-- `uv` or `python3` for the one-off model conversion (`just-speak setup`)
-- ~1.1 GB disk for the model; an [Inception](https://www.inceptionlabs.ai) API key for the rewrite step
+- An OpenAI API key for transcription and an [Inception](https://www.inceptionlabs.ai) API key for the rewrite step
+- Local provider only: ~1.1 GB disk for the model, and `uv` or `python3` for its one-off conversion (`just-speak setup`)
 
-## Numbers (M5, 4 threads)
+## Numbers (M5)
+
+OpenAI (`gpt-live-transcribe`, `delay: medium`):
+
+| | |
+|---|---|
+| Footprint | ~15 MB idle and while dictating |
+| ASR at release | ~0.6–0.8 s, however long you spoke (text streams back during speech) |
+| Rewrite | ~0.3–0.5 s |
+| Cost | $0.017 per minute of audio |
+
+`delay` barely moves release latency (minimal…xhigh all measured ~0.5–0.7 s), so it defaults to the more
+accurate `medium`.
+
+Local (Fun-ASR-Nano, 4 threads):
 
 | | |
 |---|---|
@@ -122,8 +148,8 @@ Config: `~/.config/just-speak/config.json` — see [`config.example.json`](confi
 
 ```sh
 just-speak history --since 7d          # print (add --raw for the pre-rewrite text, --json, --grep)
-just-speak transcribe a.wav b.wav      # ASR only (same chunked path as the app), with timings
-                                       #   --realtime: feed at speaking pace (true release latency); --whole: one pass
+just-speak transcribe a.wav b.wav      # ASR only (same path as the app), with timings; --provider openai|local
+                                       #   --realtime: feed at speaking pace (true release latency); --whole: one pass (local)
 just-speak rewrite "um so like hello"  # rewrite only
 just-speak config-path
 ```
@@ -133,10 +159,10 @@ just-speak config-path
 | | |
 |---|---|
 | `~/.config/just-speak/config.json` | settings |
-| `~/.config/just-speak/.env` | `INCEPTION_API_KEY` (if not in config) |
+| `~/.config/just-speak/.env` | `OPENAI_API_KEY`, `INCEPTION_API_KEY` (if not in config) |
 | `~/Library/Application Support/just-speak/history/YYYY-MM.jsonl` | one JSON record per line (owner-only, 0600) |
 | `~/Library/Logs/just-speak.log` | timings and errors only — never transcript text |
-| `~/Library/Application Support/just-speak/models/` | `funasr-nano-int8-mmap/`, `silero_vad.onnx` |
+| `~/Library/Application Support/just-speak/models/` | `funasr-nano-int8-mmap/`, `silero_vad.onnx` (local provider) |
 
 ## Development
 

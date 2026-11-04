@@ -9,10 +9,22 @@
   },
 
   // Names and jargon to bias recognition toward; also passed to the rewriter as preferred spellings.
-  // Keep it to a few dozen: they share the ASR model's 512-token context with the audio.
+  // Keep it to a few dozen: with the local model they share its 512-token context with the audio.
   "hotwords": ["Inception", "Mercury", "sherpa-onnx"],
 
   "asr": {
+    "provider": "openai",      // openai = stream audio to OpenAI; local = Fun-ASR-Nano on this Mac (run `just-speak setup`)
+    "openai": {
+      "model": "gpt-live-transcribe",
+      "delay": "medium",       // minimal | low | medium | high | xhigh — accuracy vs. how soon text streams back
+      "languages": [],         // [] = auto; or e.g. ["en", "zh"]
+      "prompt": "",            // optional context, e.g. "Software engineering discussion"
+      "apiKey": "",            // "" = OPENAI_API_KEY from env or ~/.config/just-speak/.env
+      "timeoutMs": 6000,       // from release to the final transcript
+      "retryModel": "gpt-transcribe",  // on failure, send the whole clip once more to this model; "" = no retry
+    },
+
+    // local provider only
     "modelDir": "~/Library/Application Support/just-speak/models/funasr-nano-int8-mmap",
     "vadModel": "~/Library/Application Support/just-speak/models/silero_vad.onnx",  // splits long dictation at pauses
     "numThreads": 4,           // fastest on M-series; 2 is ~25% slower, 6 no faster

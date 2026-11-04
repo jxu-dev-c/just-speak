@@ -11,6 +11,30 @@ public struct Config: Codable, Equatable, Sendable {
   }
 
   public struct ASR: Codable, Equatable, Sendable {
+    public enum Provider: String, Codable, Sendable { case openai, local }
+
+    /// OpenAI realtime transcription (see RealtimeTranscription.swift).
+    public struct OpenAI: Codable, Equatable, Sendable {
+      public var model = "gpt-live-transcribe"
+      /// minimal | low | medium | high | xhigh: how much audio context the model waits for before emitting text.
+      /// Release latency measured the same (~0.5–0.7 s) at every level, so take the accuracy.
+      public var delay = "medium"
+      /// Expected input languages as ISO codes ("en", "zh-cn", "cmn"); empty = auto.
+      public var languages: [String] = []
+      /// Optional description of the recording or its setting.
+      public var prompt = ""
+      /// Empty = OPENAI_API_KEY from the environment or ~/.config/just-speak/.env.
+      public var apiKey = ""
+      /// From releasing the hotkey to the final transcript.
+      public var timeoutMs = 6000
+      /// On failure the whole clip is sent once more to this model; empty disables the retry.
+      public var retryModel = "gpt-transcribe"
+    }
+
+    /// openai = stream audio to OpenAI; local = Fun-ASR-Nano on this Mac (needs `just-speak setup`).
+    public var provider = Provider.openai
+    public var openai = OpenAI()
+    // The keys below apply to the local provider only.
     public var modelDir = "~/Library/Application Support/just-speak/models/funasr-nano-int8-mmap"
     /// Silero VAD, used to split long dictation at pauses (see SpeechChunker).
     public var vadModel = "~/Library/Application Support/just-speak/models/silero_vad.onnx"
@@ -140,12 +164,22 @@ extension Config {
   /// rewrite.apiKey, then $INCEPTION_API_KEY, then INCEPTION_API_KEY in ~/.config/just-speak/.env.
   public func resolvedAPIKey(env: [String: String] = ProcessInfo.processInfo.environment,
                              envFile: URL = Paths.envFile) -> String? {
-    if !rewrite.apiKey.isEmpty { return rewrite.apiKey }
-    if let k = env["INCEPTION_API_KEY"], !k.isEmpty { return k }
+    Self.resolveKey("INCEPTION_API_KEY", override: rewrite.apiKey, env: env, envFile: envFile)
+  }
+
+  /// asr.openai.apiKey, then $OPENAI_API_KEY, then OPENAI_API_KEY in ~/.config/just-speak/.env.
+  public func resolvedOpenAIKey(env: [String: String] = ProcessInfo.processInfo.environment,
+                                envFile: URL = Paths.envFile) -> String? {
+    Self.resolveKey("OPENAI_API_KEY", override: asr.openai.apiKey, env: env, envFile: envFile)
+  }
+
+  private static func resolveKey(_ name: String, override: String, env: [String: String], envFile: URL) -> String? {
+    if !override.isEmpty { return override }
+    if let k = env[name], !k.isEmpty { return k }
     guard let text = try? String(contentsOf: envFile, encoding: .utf8) else { return nil }
     for line in text.split(whereSeparator: \.isNewline) {
       let parts = line.split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
-      if parts.count == 2, parts[0] == "INCEPTION_API_KEY" {
+      if parts.count == 2, parts[0] == name {
         let v = parts[1].trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
         if !v.isEmpty { return v }
       }

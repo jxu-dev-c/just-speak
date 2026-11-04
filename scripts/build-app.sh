@@ -47,7 +47,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSMicrophoneUsageDescription</key>
-  <string>just-speak records your voice while you hold the dictation hotkey and transcribes it on this Mac.</string>
+  <string>just-speak records your voice while you hold the dictation hotkey and turns it into text.</string>
 </dict>
 </plist>
 EOF
