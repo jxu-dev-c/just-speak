@@ -22,9 +22,10 @@ final class StubProtocol: URLProtocol, @unchecked Sendable {
 }
 
 @Suite(.serialized) struct RewriterTests {
-  func makeRewriter(timeoutMs: Int = 2500, apiKey: String? = "k") -> Rewriter {
+  func makeRewriter(timeoutMs: Int = 2500, apiKey: String? = "k", systemPrompt: String? = nil) -> Rewriter {
     var cfg = Config().rewrite
     cfg.timeoutMs = timeoutMs
+    cfg.systemPrompt = systemPrompt
     let sc = URLSessionConfiguration.ephemeral
     sc.protocolClasses = [StubProtocol.self]
     sc.timeoutIntervalForRequest = Double(timeoutMs) / 1000
@@ -42,8 +43,25 @@ final class StubProtocol: URLProtocol, @unchecked Sendable {
     #expect(body["reasoning_effort"] as? String == "instant")
     #expect(req.value(forHTTPHeaderField: "Authorization") == "Bearer k")
     let messages = try #require(body["messages"] as? [[String: String]])
-    #expect(messages[1]["content"] == "<transcript>\num hello\n</transcript>")
+    #expect(messages.last == ["role": "user", "content": "<transcript>\num hello\n</transcript>"])
+    #expect(messages[0]["role"] == "system")
     #expect(messages[0]["content"]!.hasSuffix("Mercury"))
+  }
+
+  @Test func builtInPromptSendsExamplesAsTurns() {
+    let messages = makeRewriter().messages(transcript: "x", hotwords: [])
+    let examples = Rewriter.defaultExamples
+    #expect(messages.count == 2 + 2 * examples.count)
+    #expect(messages.dropFirst().map { $0["role"]! } == Array(repeating: ["user", "assistant"], count: examples.count)
+      .flatMap { $0 } + ["user"])
+    #expect(messages[1]["content"] == "<transcript>\n\(examples[0].transcript)\n</transcript>")
+    #expect(messages[2]["content"] == examples[0].rewrite)
+  }
+
+  @Test func customPromptSkipsBuiltInExamples() {
+    let messages = makeRewriter(systemPrompt: "Fix punctuation only.").messages(transcript: "x", hotwords: [])
+    #expect(messages.map { $0["role"]! } == ["system", "user"])
+    #expect(messages[0]["content"] == "Fix punctuation only.")
   }
 
   @Test func noHotwordsNoSpellingLine() {
