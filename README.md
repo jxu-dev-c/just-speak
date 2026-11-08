@@ -13,8 +13,11 @@ Hold a key, speak, let go — your words appear, cleaned up, wherever the cursor
   transcribes while you speak, so only the last words are left at release. The app stays at ~15 MB.
   Switch `asr.provider` to `local` for on-device [Fun-ASR-Nano](https://github.com/FunAudioLLM/Fun-ASR) (int8) via
   sherpa-onnx instead (~1 GB while loaded, nothing leaves your Mac).
-- **Rewrite**: Inception Mercury 3 (`reasoning_effort: instant`) removes fillers, false starts and fixes
-  punctuation without translating or answering what you said. Falls back to the raw transcript on any error.
+- **Rewrite**: Inception Mercury 3 (`reasoning_effort: instant`) rewrites the whole passage into clear, concise
+  text for a formal email or presentation, in the language you spoke: fillers, false starts and points you repeated
+  while thinking aloud are cut, every fact and request is kept, and requests are never answered or carried out. Falls
+  back to the raw transcript on any error.
+  Set `rewrite.systemPrompt` to use your own prompt instead.
 - **Clipboard untouched**: text is typed as synthetic Unicode keystrokes.
 - **Local history**: plain JSONL per month, readable with `jq`/`grep` or `just-speak history`.
 - **JSON config** with hot reload.
