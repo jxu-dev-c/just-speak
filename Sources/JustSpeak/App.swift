@@ -25,6 +25,8 @@ final class AppController: NSObject, NSApplicationDelegate {
   private var config = Config()
   private var state = State.idle
   private var session: (any Dictation)?
+  /// Types the transcript while the user speaks (`output.stream`); nil otherwise.
+  private var live: LiveTyper?
   private let recorder = AudioRecorder()
   private var transcriber: Transcriber!
   private var openAI: OpenAITranscriber!
@@ -97,23 +99,36 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
   }
 
-  private func makeDictation() throws -> any Dictation {
+  private func makeDictation(onPartial: (@Sendable (String) -> Void)?) throws -> any Dictation {
     switch config.asr.provider {
     case .openai:
-      return try openAI.makeSession()
+      return try openAI.makeSession(onPartial: onPartial)
     case .local:
       return DictationSession(
         transcriber: transcriber, vadModel: config.vadModelURL,
-        options: DecodeOptions(hotwords: config.hotwords, language: config.asr.language, itn: config.asr.itn))
+        options: DecodeOptions(hotwords: config.hotwords, language: config.asr.language, itn: config.asr.itn),
+        onPartial: onPartial)
     }
+  }
+
+  /// Live typing: word by word with OpenAI, a phrase at a time at your pauses with the local model.
+  /// It needs synthetic keystrokes (`paste`/`ax` are for apps where typing misbehaves).
+  private var streams: Bool {
+    config.output.stream && config.output.method == .type && Inserter.hasAccessibility
   }
 
   private func beginRecording() {
     let feedback = config.feedback
     let session: any Dictation
     let delay = config.hotkey.mode == .hold ? config.hotkey.minHoldMs : 0
+    let live = streams ? LiveTyper(config: config.output) : nil
+    // DispatchQueue.main keeps partials in order (unordered Tasks could make the field flicker back and forth)
+    var onPartial: (@Sendable (String) -> Void)?
+    if let live {
+      onPartial = { text in DispatchQueue.main.async { live.show(text) } }
+    }
     do {
-      session = try makeDictation()
+      session = try makeDictation(onPartial: onPartial)
     } catch {
       status.set(.warning, message: "\(error)")
       // Only for a held press: a tap of the modifier (⌥←) shouldn't flash an error.
@@ -138,6 +153,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
     announced = false
     self.session = session
+    self.live = live
     Log.info("recording started")
     state = .recording(startedAt: Date(), app: NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
     status.set(.recording)
@@ -147,6 +163,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     let work = DispatchWorkItem { [weak self] in
       guard let self, case .recording = self.state else { return }
       self.announced = true
+      self.live?.arm()
       self.playSound(self.config.feedback.startSound)
       if self.config.feedback.pill { self.orb.showListening() }
       if self.config.asr.provider == .local { self.transcriber.preload() }
@@ -168,6 +185,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     recorder.stop()
     session?.cancel()
     session = nil
+    if let live { Task { await live.stop() } }  // whatever streamed in stays
+    live = nil
     state = .idle
     status.set(.idle)
     if announced { orb.hide() }
@@ -179,6 +198,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     preloadWork?.cancel()
     recorder.stop()
     self.session = nil
+    let live = self.live
+    self.live = nil
     state = .processing
     status.set(.processing)
     if announced {
@@ -186,16 +207,17 @@ final class AppController: NSObject, NSApplicationDelegate {
       if config.feedback.pill { orb.showProcessing() }
     }
     let cfg = config
-    Task { await process(session, app: app, config: cfg) }
+    Task { await process(session, app: app, config: cfg, live: live) }
   }
 
-  private func process(_ session: any Dictation, app: String?, config cfg: Config) async {
+  private func process(_ session: any Dictation, app: String?, config cfg: Config, live: LiveTyper?) async {
     defer { state = .idle }
     let total = Stopwatch()
     let result: DictationResult
     do {
       result = try await session.finish()
     } catch {
+      await live?.stop()  // keep any streamed text: better than losing the dictation
       Log.info("asr failed: \(error)")
       status.set(.warning, message: "\(error)")
       if cfg.feedback.pill { orb.showMessage("Transcription failed: \(error)") }
@@ -205,6 +227,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     let raw = result.text
     let durationMs = result.durationMs
     guard durationMs >= 300, !raw.isEmpty else {  // too short, or VAD heard no speech
+      await live?.stop()
       status.set(.idle)
       if cfg.feedback.pill { orb.shakeOff() }
       return
@@ -226,7 +249,15 @@ final class AppController: NSObject, NSApplicationDelegate {
     let text = rewritten ?? raw
     lastText = text
 
-    if Inserter.hasAccessibility {
+    var replaceMs: Int?
+    if let live {
+      if cfg.feedback.pill { orb.hide() }
+      let sw = Stopwatch()
+      if !(await live.finish(text)) {
+        status.set(.warning, message: "Focus moved during dictation; final text not inserted (use Copy Last Dictation)")
+      }
+      replaceMs = sw.ms
+    } else if Inserter.hasAccessibility {
       if cfg.feedback.pill { orb.hide() }
       await Inserter.insert(text, config: cfg.output)
     } else {
@@ -238,6 +269,7 @@ final class AppController: NSObject, NSApplicationDelegate {
       + "asr \(asrMs)ms" + (rewriteMs.map { " + rewrite \($0)ms" } ?? "") + " (total \(total.ms)ms)"
     Log.info("dictation audio=\(durationMs)ms asr=\(asrMs)ms rewrite=\(rewriteMs.map(String.init) ?? "-")ms "
       + "total=\(total.ms)ms asr.provider=\(cfg.asr.provider.rawValue) \(result.logDetail) chars=\(text.count) "
+      + (live.map { "stream=on partials=\($0.partials) del=\($0.deleted) replace=\(replaceMs ?? 0)ms " } ?? "")
       + "footprint=\(Int(ProcessStats.footprintMB))MB")
 
     history?.append(HistoryRecord(durationMs: durationMs, raw: raw, rewritten: rewritten, app: app,

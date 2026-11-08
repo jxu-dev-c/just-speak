@@ -62,6 +62,18 @@ environment variable, then `~/.config/just-speak/.env`. Use the `.env` file for 
 Finder or `open` doesn't see variables exported in your shell profile. Keys are read at launch,
 so quit and reopen JustSpeak after changing them.
 
+### Live typing
+
+The transcript is typed into the field while you speak. With `openai` (the default) the first words show up
+~1 s in, then word by word. With `local`, text shows up a phrase at a time: whenever you pause, what you've
+said is transcribed (~75 ms per second of new audio) and typed, so nothing appears while you talk
+without a pause. Either way, when you let go the rewritten text replaces it. Only the part that changed is
+deleted and retyped, and text that was already in the field is left alone. To keep this simple, the swap
+assumes the field still ends with what was typed, so typing or moving the cursor before it lands can garble
+the result. Cancelling (Esc) keeps whatever streamed in. If you switch apps mid-dictation, nothing more is
+typed and the final text is left for "Copy Last Dictation". Set `output.stream` to `false` to insert only the
+final text at release. It needs `output.method: "type"`.
+
 ### Local speech model (optional)
 
 To transcribe on-device, download the model once and set `"asr": {"provider": "local"}` in `config.json`:
@@ -149,7 +161,8 @@ Config: `~/.config/just-speak/config.json` — see [`config.example.json`](confi
 ```sh
 just-speak history --since 7d          # print (add --raw for the pre-rewrite text, --json, --grep)
 just-speak transcribe a.wav b.wav      # ASR only (same path as the app), with timings; --provider openai|local
-                                       #   --realtime: feed at speaking pace (true release latency); --whole: one pass (local)
+                                       #   --realtime: feed at speaking pace (true release latency; prints what
+                                       #   live typing would show to stderr); --whole: one pass (local)
 just-speak rewrite "um so like hello"  # rewrite only
 just-speak config-path
 ```

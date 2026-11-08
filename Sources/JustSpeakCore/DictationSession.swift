@@ -29,24 +29,33 @@ public struct DictationResult: Sendable {
 /// One local dictation: buffers audio as it arrives, cuts it into chunks at pauses and starts transcribing
 /// each finished chunk immediately, so by the time the hotkey is released only the tail is left.
 /// The tail itself is decoded speculatively whenever the speaker pauses; if nothing is said before
-/// release, that result is used as is.
+/// release, that result is used as is. Those decodes also feed `onPartial` (live typing), so text shows
+/// up a phrase at a time, at the speaker's pauses.
 public final class DictationSession: Dictation, @unchecked Sendable {
   private let queue = DispatchQueue(label: "just-speak.session", qos: .userInitiated)
   private let transcriber: Transcriber
   private let options: DecodeOptions
+  private let onPartial: (@Sendable (String) -> Void)?
   // Only touched on `queue`.
   private var samples: [Float] = []
   private var chunker: SpeechChunker?
   private var chunkTasks: [Task<String, Error>] = []
   private var chunkRanges: [Range<Int>] = []
-  private var speculative: (range: Range<Int>, task: Task<String, Error>)?
+  private var speculative: (range: Range<Int>, task: Task<String, Error>, id: Int)?
+  private var nextDecodeID = 0
+  private var partial = PartialTranscript()
+  private var lastPartial = ""
+  private var cancelled = false
 
   /// Without a VAD, fall back to fixed windows that fit the model's context.
   static let fallbackWindow = 18 * SpeechChunker.sampleRate
 
-  public init(transcriber: Transcriber, vadModel: URL, options: DecodeOptions) {
+  /// `onPartial` gets the transcript so far after each decode during speech, on a background queue.
+  public init(transcriber: Transcriber, vadModel: URL, options: DecodeOptions,
+              onPartial: (@Sendable (String) -> Void)? = nil) {
     self.transcriber = transcriber
     self.options = options
+    self.onPartial = onPartial
     queue.async {
       self.samples.reserveCapacity(SpeechChunker.sampleRate * 30)
       do {
@@ -70,7 +79,9 @@ public final class DictationSession: Dictation, @unchecked Sendable {
       }
       ranges.forEach(self.launch)
       if let tail = chunker.pendingTail(), tail != self.speculative?.range {
-        self.speculative = (tail, self.decode(tail))
+        let (id, task) = self.decode(tail)
+        self.speculative = (tail, task, id)
+        self.partial.setTail(id)
       }
     }
   }
@@ -86,7 +97,9 @@ public final class DictationSession: Dictation, @unchecked Sendable {
   }
 
   /// Chunks already handed to the ASR queue finish and are discarded.
-  public func cancel() {}
+  public func cancel() {
+    queue.async { self.cancelled = true }
+  }
 
   public func finish() async throws -> DictationResult {
     let r = try await finishWithChunks()
@@ -105,6 +118,7 @@ public final class DictationSession: Dictation, @unchecked Sendable {
             if let spec = self.speculative, chunker.isSameSpeech(spec.range, as: tail) {
               self.chunkRanges.append(tail)
               self.chunkTasks.append(spec.task)
+              self.partial.addChunk(spec.id)
               reused = true
             } else {
               self.launch(tail)
@@ -129,13 +143,68 @@ public final class DictationSession: Dictation, @unchecked Sendable {
   }
 
   private func launch(_ range: Range<Int>) {
+    let (id, task) = decode(range)
     chunkRanges.append(range)
-    chunkTasks.append(decode(range))
+    chunkTasks.append(task)
+    partial.addChunk(id)
   }
 
-  private func decode(_ range: Range<Int>) -> Task<String, Error> {
+  private func decode(_ range: Range<Int>) -> (id: Int, task: Task<String, Error>) {
     let slice = Array(samples[range])
     let (transcriber, options) = (self.transcriber, self.options)
-    return Task { try await transcriber.transcribe(slice, options: options) }
+    let id = nextDecodeID
+    nextDecodeID += 1
+    guard onPartial != nil else {
+      return (id, Task { try await transcriber.transcribe(slice, options: options) })
+    }
+    return (id, Task {
+      let text = try await transcriber.transcribe(slice, options: options)
+      self.queue.async { self.decoded(id, text) }
+      return text
+    })
+  }
+
+  private func decoded(_ id: Int, _ text: String) {
+    partial.finished(id, text: text)
+    guard !cancelled, let onPartial, let t = partial.text, !t.isEmpty, t != lastPartial else { return }
+    lastPartial = t
+    onPartial(t)
+  }
+}
+
+/// What live typing shows for a local dictation: the chunks cut so far, in order, then the latest decode of
+/// the speech since the last cut. `text` is nil while any of those decodes is still running, so the shown
+/// text never shrinks back just because newer work hasn't finished yet.
+struct PartialTranscript {
+  private var chunks: [Int] = []
+  private var tail: Int?
+  private var texts: [Int: String] = [:]
+  /// A chunk is usually cut at the pause that just started a tail decode of the same speech, so until the
+  /// chunk's own decode finishes, that tail decode stands in for it (instead of waiting for both).
+  private var standIn: [Int: Int] = [:]
+
+  /// A chunk was cut (or, at release, the tail decode became one): it covers any earlier tail decode.
+  mutating func addChunk(_ id: Int) {
+    chunks.append(id)
+    if let tail, tail != id { standIn[id] = tail }
+    tail = nil
+  }
+
+  /// A newer decode of the speech since the last cut, started at a pause.
+  mutating func setTail(_ id: Int) {
+    tail = id
+  }
+
+  mutating func finished(_ id: Int, text: String) {
+    texts[id] = text
+  }
+
+  var text: String? {
+    var parts: [String] = []
+    for id in chunks + (tail.map { [$0] } ?? []) {
+      guard let t = texts[id] ?? standIn[id].flatMap({ texts[$0] }) else { return nil }
+      parts.append(t)
+    }
+    return TranscriptJoiner.join(parts)
   }
 }

@@ -28,33 +28,63 @@ enum Inserter {
 
   // MARK: type
 
+  /// Stamped on every key event we post (`eventSourceUserData`), so the hotkey monitor can tell
+  /// them from the user's own keys. "JSPK".
+  static let marker: Int64 = 0x4A53_504B
+
   /// Synthetic key events carrying the text as Unicode, ≤20 UTF-16 units each.
   static func type(_ text: String, config: Config.Output) async {
+    let restoreSource = await beginTyping(config)
+    await postText(text, newlines: config.newlines)
+    await endTyping(restoreSource)
+  }
+
+  /// If an input method is active, switch to its ASCII layout; pass the result to `endTyping`.
+  static func beginTyping(_ config: Config.Output) async -> TISInputSource? {
     let restoreSource = config.switchToAsciiInputSource ? switchToASCIILayoutIfNeeded() : nil
     if restoreSource != nil { try? await Task.sleep(for: .milliseconds(40)) }  // let the switch land
+    return restoreSource
+  }
 
+  static func endTyping(_ restoreSource: TISInputSource?) async {
+    guard let restoreSource else { return }
+    try? await Task.sleep(for: .milliseconds(40))
+    TISSelectInputSource(restoreSource)
+  }
+
+  /// Type `text` as is, without touching the input source.
+  static func postText(_ text: String, newlines: Config.Output.Newlines) async {
     let src = CGEventSource(stateID: .hidSystemState)
-    for step in TypingPlan.steps(for: text, newlines: config.newlines) {
+    for step in TypingPlan.steps(for: text, newlines: newlines) {
       switch step {
       case .text(var units):
         guard let down = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: true),
               let up = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: false) else { continue }
-        down.flags = []  // the hotkey modifier may still be physically held in toggle mode
-        up.flags = []
-        down.keyboardSetUnicodeString(stringLength: units.count, unicodeString: &units)
-        up.keyboardSetUnicodeString(stringLength: units.count, unicodeString: &units)
-        down.post(tap: .cghidEventTap)
-        up.post(tap: .cghidEventTap)
+        for e in [down, up] {
+          e.flags = []  // the hotkey modifier may still be physically held (hold mode while streaming, toggle mode)
+          e.keyboardSetUnicodeString(stringLength: units.count, unicodeString: &units)
+          e.setIntegerValueField(.eventSourceUserData, value: marker)
+          e.post(tap: .cghidEventTap)
+        }
       case .newline:
-        postKey(CGKeyCode(kVK_Return), flags: config.newlines == .shiftReturn ? .maskShift : [], source: src)
+        postKey(CGKeyCode(kVK_Return), flags: newlines == .shiftReturn ? .maskShift : [], source: src)
       }
       // A short gap keeps busy apps (Electron, terminals) from dropping events.
       try? await Task.sleep(for: .milliseconds(2))
     }
+  }
 
-    if let restoreSource {
-      try? await Task.sleep(for: .milliseconds(40))
-      TISSelectInputSource(restoreSource)
+  /// Deletes posted back to back before a short pause, so slow apps (Electron) can keep up.
+  static let deleteBurst = 50
+
+  /// Press Delete `count` times (no modifiers, so a held ⌥ doesn't turn it into delete-word), in bursts:
+  /// the app handles them in a redraw or two, so the old text vanishes at once instead of visibly erasing.
+  static func deleteBackward(_ count: Int) async {
+    guard count > 0 else { return }
+    let src = CGEventSource(stateID: .hidSystemState)
+    for i in 1...count {
+      postKey(CGKeyCode(kVK_Delete), flags: [], source: src)
+      if i % deleteBurst == 0 && i < count { try? await Task.sleep(for: .milliseconds(2)) }
     }
   }
 
@@ -62,6 +92,7 @@ enum Inserter {
     for isDown in [true, false] {
       guard let e = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: isDown) else { continue }
       e.flags = flags
+      e.setIntegerValueField(.eventSourceUserData, value: marker)
       e.post(tap: .cghidEventTap)
     }
   }

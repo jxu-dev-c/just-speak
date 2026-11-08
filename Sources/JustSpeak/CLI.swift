@@ -152,7 +152,7 @@ enum CLI {
                                      apiKey: config.resolvedOpenAIKey())
       for f in files {
         guard let w = Wave.read(f) else { print("cannot read \(f)"); continue }
-        let session = try openAI.makeSession()
+        let session = try openAI.makeSession(onPartial: realtime ? printPartial(since: Stopwatch()) : nil)
         try await feed(Resample.linear(w.samples, from: w.sampleRate, to: session.sampleRate), to: session,
                        realtime: realtime)
         let t = Stopwatch()
@@ -187,7 +187,8 @@ enum CLI {
         print("cannot read \(f) (need 16 kHz mono 16-bit WAV)")
         continue
       }
-      let session = DictationSession(transcriber: transcriber, vadModel: config.vadModelURL, options: opts)
+      let session = DictationSession(transcriber: transcriber, vadModel: config.vadModelURL, options: opts,
+                                     onPartial: realtime ? printPartial(since: Stopwatch()) : nil)
       try await feed(w.samples, to: session, realtime: realtime)
       let t = Stopwatch()
       let result = try await session.finishWithChunks()
@@ -204,6 +205,13 @@ enum CLI {
     for i in stride(from: 0, to: samples.count, by: block) {
       session.feed(Array(samples[i..<min(i + block, samples.count)]))
       if realtime { try await Task.sleep(for: .milliseconds(100)) }  // pace like a live mic
+    }
+  }
+
+  /// With --realtime: what live typing would show, as it streams in (stderr, so stdout stays the result).
+  private static func printPartial(since start: Stopwatch) -> @Sendable (String) -> Void {
+    { text in
+      FileHandle.standardError.write(Data(String(format: "  +%.1fs  %@\n", Double(start.ms) / 1000, text).utf8))
     }
   }
 
