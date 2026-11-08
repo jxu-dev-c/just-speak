@@ -50,8 +50,8 @@
                                // paste = ⌘V via a transient pasteboard entry, then restore
     "switchToAsciiInputSource": true,  // briefly switch away from Pinyin etc. while typing
     "newlines": "shiftReturn", // shiftReturn | keep | space — shiftReturn won't send chat messages early
-    "stream": true,            // asr.provider openai + method type: type the transcript as you speak,
-                               // then swap in the rewritten text at release
+    "stream": true,            // method type: type the transcript as you speak (openai: word by word; local: a phrase
+                               // at a time, at your pauses), then swap in the rewritten text at release
   },
 
   "feedback": {

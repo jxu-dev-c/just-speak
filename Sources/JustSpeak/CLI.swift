@@ -187,7 +187,8 @@ enum CLI {
         print("cannot read \(f) (need 16 kHz mono 16-bit WAV)")
         continue
       }
-      let session = DictationSession(transcriber: transcriber, vadModel: config.vadModelURL, options: opts)
+      let session = DictationSession(transcriber: transcriber, vadModel: config.vadModelURL, options: opts,
+                                     onPartial: realtime ? printPartial(since: Stopwatch()) : nil)
       try await feed(w.samples, to: session, realtime: realtime)
       let t = Stopwatch()
       let result = try await session.finishWithChunks()

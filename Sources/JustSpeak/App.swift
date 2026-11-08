@@ -25,7 +25,7 @@ final class AppController: NSObject, NSApplicationDelegate {
   private var config = Config()
   private var state = State.idle
   private var session: (any Dictation)?
-  /// Types the transcript while the user speaks (openai with `output.stream`); nil otherwise.
+  /// Types the transcript while the user speaks (`output.stream`); nil otherwise.
   private var live: LiveTyper?
   private let recorder = AudioRecorder()
   private var transcriber: Transcriber!
@@ -106,14 +106,15 @@ final class AppController: NSObject, NSApplicationDelegate {
     case .local:
       return DictationSession(
         transcriber: transcriber, vadModel: config.vadModelURL,
-        options: DecodeOptions(hotwords: config.hotwords, language: config.asr.language, itn: config.asr.itn))
+        options: DecodeOptions(hotwords: config.hotwords, language: config.asr.language, itn: config.asr.itn),
+        onPartial: onPartial)
     }
   }
 
-  /// Live typing needs OpenAI's deltas and synthetic keystrokes (`paste`/`ax` are for apps where typing misbehaves).
+  /// Live typing: word by word with OpenAI, a phrase at a time at your pauses with the local model.
+  /// It needs synthetic keystrokes (`paste`/`ax` are for apps where typing misbehaves).
   private var streams: Bool {
-    config.output.stream && config.output.method == .type && config.asr.provider == .openai
-      && Inserter.hasAccessibility
+    config.output.stream && config.output.method == .type && Inserter.hasAccessibility
   }
 
   private func beginRecording() {

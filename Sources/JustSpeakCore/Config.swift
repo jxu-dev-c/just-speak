@@ -69,8 +69,8 @@ public struct Config: Codable, Equatable, Sendable {
     public var switchToAsciiInputSource = true
     /// shiftReturn avoids sending a chat message halfway through; keep types a bare return.
     public var newlines = Newlines.shiftReturn
-    /// Type the transcript into the field while you speak (asr.provider openai, method type);
-    /// at release the rewritten text replaces it.
+    /// Type the transcript into the field while you speak (method type): word by word with openai, a phrase at
+    /// a time at your pauses with local. At release the rewritten text replaces it.
     public var stream = true
   }
 
