@@ -59,7 +59,9 @@ import Testing
     let p = RealtimeProtocol.parse
     #expect(p(#"{"type":"input_audio_buffer.committed","item_id":"item_1"}"#) == .committed(itemID: "item_1"))
     #expect(p(#"{"type":"conversation.item.input_audio_transcription.delta","item_id":"item_1","delta":"Hi"}"#)
-      == .delta(itemID: "item_1"))
+      == .delta(itemID: "item_1", text: "Hi"))
+    #expect(p(#"{"type":"conversation.item.input_audio_transcription.delta","item_id":"item_1"}"#)
+      == .delta(itemID: "item_1", text: ""))
     #expect(p(#"{"type":"conversation.item.input_audio_transcription.completed","item_id":"item_1","transcript":"Hi."}"#)
       == .completed(itemID: "item_1", transcript: "Hi."))
     #expect(p(#"{"type":"conversation.item.input_audio_transcription.failed","item_id":"item_1","error":{"message":"boom"}}"#)

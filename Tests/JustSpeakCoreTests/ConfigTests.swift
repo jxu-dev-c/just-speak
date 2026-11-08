@@ -24,6 +24,13 @@ import Testing
     #expect(c.asr.modelDir == Config().asr.modelDir)
   }
 
+  @Test func outputStreamDefaultsOnAndCanBeTurnedOff() throws {
+    #expect(Config().output.stream == true)
+    let c = try Config.decode(Data(#"{"output": {"stream": false}}"#.utf8))
+    #expect(c.output.stream == false)
+    #expect(c.output.method == .type)  // sibling key keeps its default
+  }
+
   @Test func json5CommentsAndTrailingCommas() throws {
     let c = try Config.decode(Data("""
       {

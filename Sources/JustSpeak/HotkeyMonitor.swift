@@ -67,6 +67,8 @@ final class HotkeyMonitor {
       isDown = down
       onEvent?(down ? .pressed : .released)
     case .keyDown:
+      // our own typing (live streaming posts keys while the hotkey is held)
+      if event.cgEvent?.getIntegerValueField(.eventSourceUserData) == Inserter.marker { return }
       // Esc cancels; any other key while the hotkey is held means it's being used as a modifier
       // (e.g. ⌥← word jump), so that press isn't a dictation.
       if event.keyCode == Self.escapeKeyCode || isDown {

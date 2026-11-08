@@ -24,7 +24,7 @@ public enum RealtimeProtocol {
 
   public enum Event: Equatable, Sendable {
     case committed(itemID: String)
-    case delta(itemID: String)
+    case delta(itemID: String, text: String)
     case completed(itemID: String, transcript: String)
     case failed(String)
     case other
@@ -78,7 +78,8 @@ public enum RealtimeProtocol {
     let message = (json["error"] as? [String: Any])?["message"] as? String
     switch type {
     case "input_audio_buffer.committed": return .committed(itemID: item)
-    case "conversation.item.input_audio_transcription.delta": return .delta(itemID: item)
+    case "conversation.item.input_audio_transcription.delta":
+      return .delta(itemID: item, text: json["delta"] as? String ?? "")
     case "conversation.item.input_audio_transcription.completed":
       return .completed(itemID: item, transcript: json["transcript"] as? String ?? "")
     case "conversation.item.input_audio_transcription.failed": return .failed(message ?? "transcription failed")
@@ -107,9 +108,11 @@ public final class OpenAITranscriber: Sendable {
   }
 
   /// Opens the connection right away, so the handshake overlaps the start of speech.
-  public func makeSession() throws -> CloudDictation {
+  /// `onPartial` gets the transcript so far (trimmed) after each delta, on a background queue.
+  public func makeSession(onPartial: (@Sendable (String) -> Void)? = nil) throws -> CloudDictation {
     guard let apiKey, !apiKey.isEmpty else { throw RealtimeError.missingAPIKey }
-    return CloudDictation(transcriber: self, socket: socket(apiKey: apiKey), model: config.model, streaming: true)
+    return CloudDictation(transcriber: self, socket: socket(apiKey: apiKey), model: config.model, streaming: true,
+                          onPartial: onPartial)
   }
 
   /// Transcribe a whole recording in a fresh session (the retry after a failed stream).
@@ -196,6 +199,7 @@ public final class CloudDictation: Dictation, @unchecked Sendable {
   private let queue = DispatchQueue(label: "just-speak.cloud", qos: .userInitiated)
   private let transcriber: OpenAITranscriber
   private let model: String
+  private let onPartial: (@Sendable (String) -> Void)?
   // Only touched on `queue`.
   private var socket: RealtimeSocket?
   private var pcm = Data()
@@ -203,14 +207,17 @@ public final class CloudDictation: Dictation, @unchecked Sendable {
   private var itemID: String?
   private var finals: [String: String] = [:]  // completions for items not (yet) known as ours
   private var deltas = 0
+  private var partial = ""  // all deltas so far
   private var failure: RealtimeError?
   private var waiter: CheckedContinuation<String, Error>?
 
   public var sampleRate: Int { RealtimeProtocol.sampleRate }
 
-  init(transcriber: OpenAITranscriber, socket: RealtimeSocket, model: String, streaming: Bool) {
+  init(transcriber: OpenAITranscriber, socket: RealtimeSocket, model: String, streaming: Bool,
+       onPartial: (@Sendable (String) -> Void)? = nil) {
     self.transcriber = transcriber
     self.model = model
+    self.onPartial = onPartial
     self.socket = socket
     socket.onEvent = { [weak self] event in
       guard let self else { return }
@@ -313,8 +320,12 @@ public final class CloudDictation: Dictation, @unchecked Sendable {
     case .success(.committed(let id)):
       itemID = id
       if let text = finals[id] { resolveLocked(.success(text)) }
-    case .success(.delta):
+    case .success(.delta(_, let text)):
       deltas += 1
+      // one turn per session, so every delta belongs to it
+      guard let onPartial, !text.isEmpty else { return }
+      partial += text
+      onPartial(partial.trimmingCharacters(in: .whitespacesAndNewlines))
     case .success(.completed(let id, let text)):
       if id == itemID { resolveLocked(.success(text)) } else { finals[id] = text }
     case .success(.other):

@@ -25,6 +25,34 @@ public enum TypingPlan {
     return steps
   }
 
+  /// What typing `text` leaves in a text field: line breaks become one "\n" each, or a space with `.space`.
+  public static func rendered(_ text: String, newlines: Config.Output.Newlines) -> String {
+    let t = text.replacingOccurrences(of: "\r\n", with: "\n")
+    return newlines == .space ? t.replacingOccurrences(of: "\n", with: " ") : t
+  }
+
+  /// How to turn a field that ends with `typed` into one that ends with `target` (both `rendered`):
+  /// press Delete `delete` times, then type `insert`. Counted in Characters, since one Delete removes one
+  /// grapheme cluster (an emoji or CJK character as much as a letter). Text after the common prefix is retyped.
+  public struct Edit: Equatable, Sendable {
+    public var delete: Int
+    public var insert: String
+    public init(delete: Int, insert: String) {
+      self.delete = delete
+      self.insert = insert
+    }
+  }
+
+  public static func edit(from typed: String, to target: String) -> Edit {
+    var a = typed.startIndex
+    var b = target.startIndex
+    while a < typed.endIndex, b < target.endIndex, typed[a] == target[b] {
+      a = typed.index(after: a)
+      b = target.index(after: b)
+    }
+    return Edit(delete: typed[a...].count, insert: String(target[b...]))
+  }
+
   private static func appendText(_ s: String, to steps: inout [Step]) {
     var chunk: [UInt16] = []
     for ch in s {  // Character = grapheme cluster, so emoji/CJK never split

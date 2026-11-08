@@ -39,3 +39,38 @@ import Testing
     #expect(o.hotwordsCSV == "Mercury,sherpa-onnx,a b,甲 乙")
   }
 }
+
+@Suite struct LiveEditTests {
+  func apply(_ typed: String, _ target: String) -> String {
+    let e = TypingPlan.edit(from: typed, to: target)
+    return String(typed.dropLast(e.delete)) + e.insert
+  }
+
+  @Test func appendingTypesOnlyTheNewText() {
+    #expect(TypingPlan.edit(from: "hello", to: "hello world") == .init(delete: 0, insert: " world"))
+    #expect(TypingPlan.edit(from: "", to: "hi") == .init(delete: 0, insert: "hi"))
+    #expect(TypingPlan.edit(from: "same", to: "same") == .init(delete: 0, insert: ""))
+  }
+
+  @Test func revisionsRetypeFromTheFirstDifference() {
+    #expect(TypingPlan.edit(from: "um so hello", to: "So, hello.") == .init(delete: 11, insert: "So, hello."))
+    #expect(TypingPlan.edit(from: "ship it on Monday", to: "ship it on Tuesday.") == .init(delete: 6, insert: "Tuesday."))
+    #expect(TypingPlan.edit(from: "erase me", to: "") == .init(delete: 8, insert: ""))
+    for (a, b) in [("abc", "abd"), ("我明天要去开会", "我后天要去开会。"), ("", ""), ("x", "")] {
+      #expect(apply(a, b) == b)
+    }
+  }
+
+  @Test func countsGraphemeClusters() {
+    #expect(TypingPlan.edit(from: "ok 👨‍👩‍👧‍👦", to: "ok") == .init(delete: 2, insert: ""))
+    #expect(TypingPlan.edit(from: "嗯那个", to: "那个") == .init(delete: 3, insert: "那个"))
+  }
+
+  @Test func renderedNewlines() {
+    #expect(TypingPlan.rendered("a\r\nb\nc", newlines: .shiftReturn) == "a\nb\nc")
+    #expect(TypingPlan.rendered("a\r\nb\nc", newlines: .keep) == "a\nb\nc")
+    #expect(TypingPlan.rendered("a\r\nb\nc", newlines: .space) == "a b c")
+    // "\r\n" is one Character: render before diffing so one Delete per typed line break is counted
+    #expect(TypingPlan.edit(from: TypingPlan.rendered("a\r\n", newlines: .keep), to: "a") == .init(delete: 1, insert: ""))
+  }
+}
