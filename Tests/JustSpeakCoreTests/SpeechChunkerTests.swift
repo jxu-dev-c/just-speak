@@ -142,6 +142,28 @@ private func wav(_ name: String) throws -> [Float] {
     #expect(c.count == 1)
     #expect(c[0].lowerBound >= 16000 * 2)
   }
+
+  @Test func longLeadingSilenceIsTrimmedWithoutMidWordCutAtMaxChunk() throws {
+    // 16.5s of leading silence + 10.6s of speech: total > 18s (maxChunkSeconds),
+    // but speech itself is only 10.6s so it must stay a single chunk with leading silence trimmed.
+    let silence = [Float](repeating: 0, count: Int(16.5 * 16000))
+    let speech = try wav("noise_en.wav")
+    let c = try chunks(silence + speech)
+    #expect(c.count == 1, "expected 1 chunk, got \(c)")
+    #expect(c[0].lowerBound >= Int(16.0 * 16000), "leading silence not trimmed: \(c[0])")
+    #expect(c[0].count <= maxLen, "chunk \(c[0]) exceeds maxLen \(maxLen)")
+  }
+
+  @Test func forcedCutAfterLeadingSilenceTrimsSilenceAndRespectsMaxChunk() throws {
+    // 12s of leading silence + ~21s of speech: even when a maxChunk cut is required,
+    // the first chunk starts after the 12s silence rather than at 0.
+    let silence = [Float](repeating: 0, count: 12 * 16000)
+    let speech = try wav("noise_en.wav")
+    let c = try chunks(silence + speech + speech)
+    #expect(c.count >= 2)
+    #expect(c[0].lowerBound >= 11 * 16000, "leading silence not trimmed on first chunk: \(c[0])")
+    for r in c { #expect(r.count <= maxLen, "chunk \(r) too long") }
+  }
 }
 
 @Suite struct TranscriptJoinerTests {

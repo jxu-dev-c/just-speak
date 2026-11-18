@@ -39,6 +39,7 @@ public final class SpeechChunker {
 
   private var fed = 0                       // absolute samples fed so far
   private var cut = 0                       // start of the region not yet handed out as a chunk
+  private var speechStart: Int?             // onset of ongoing speech when `segments` is still empty
   private var segments: [Range<Int>] = []   // completed speech segments inside [cut, fed)
 
   public init(vadModel: URL, params: Params = Params()) throws {
@@ -86,11 +87,18 @@ public final class SpeechChunker {
       let rms = sqrt(samples.reduce(Float(0)) { $0 + $1 * $1 } / Float(samples.count))
       if rms >= 0.02 { lastSpeechEnd = fed }
     }
+    if isSpeaking {
+      if speechStart == nil {
+        speechStart = max(cut, fed - samples.count - Int(0.2 * Double(Self.sampleRate)))
+      }
+    } else if segments.isEmpty {
+      speechStart = nil
+    }
     var chunks: [Range<Int>] = []
-    while fed - cut >= maxChunk {
+    while let start = segments.first?.lowerBound ?? speechStart, fed - start >= maxChunk {
       // Cut in the pause after the latest finished segment that keeps the chunk within bounds.
-      let pause = segments.last { $0.upperBound + pad - cut <= maxChunk && $0.upperBound - cut >= minChunk }
-      let at = pause.map { min($0.upperBound + pad, fed) } ?? (cut + maxChunk)
+      let pause = segments.last { $0.upperBound + pad - start <= maxChunk && $0.upperBound - start >= minChunk }
+      let at = pause.map { min($0.upperBound + pad, fed) } ?? min(fed, start + maxChunk)
       if let c = closeChunk(at: at, speechContinues: pause == nil) { chunks.append(c) }
     }
     if let first = segments.first, let last = settledPause, last.upperBound - first.lowerBound >= eagerCut,
@@ -138,10 +146,12 @@ public final class SpeechChunker {
     segments.removeAll { $0.upperBound <= end }
     // A segment straddling the cut continues into the next chunk.
     segments = segments.map { max($0.lowerBound, end)..<$0.upperBound }
-    defer { cut = end }
-
     let speaking = speechContinues && isSpeaking
-    guard let first = inside.first ?? (speaking ? cut..<end : nil) else { return nil }
+    defer {
+      cut = end
+      speechStart = speaking ? end : segments.first?.lowerBound
+    }
+    guard let first = inside.first ?? (speaking ? (speechStart ?? cut)..<end : nil) else { return nil }
     let lo = max(cut, first.lowerBound - pad)
     let hi = speaking ? end : min(end, (inside.last?.upperBound ?? end) + pad)
     return lo < hi ? lo..<hi : nil
