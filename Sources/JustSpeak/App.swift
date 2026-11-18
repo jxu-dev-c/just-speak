@@ -294,6 +294,10 @@ final class AppController: NSObject, NSApplicationDelegate {
       status.set(.warning, message: "\(error) — keeping previous config")
       return
     }
+    if status.phase == .warning {
+      status.set(.idle)
+      status.message = nil
+    }
     guard new != config else { return }
     let old = config
     config = new
