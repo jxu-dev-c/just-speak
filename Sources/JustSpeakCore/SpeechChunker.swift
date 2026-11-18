@@ -80,7 +80,12 @@ public final class SpeechChunker {
   public func accept(_ samples: UnsafeBufferPointer<Float>) -> [Range<Int>] {
     SherpaOnnxVoiceActivityDetectorAcceptWaveform(vad, samples.baseAddress, Int32(samples.count))
     fed += samples.count
+    let wasPaused = !isSpeaking && !segments.isEmpty
     drainSegments()
+    if wasPaused, !isSpeaking, !samples.isEmpty {
+      let rms = sqrt(samples.reduce(Float(0)) { $0 + $1 * $1 } / Float(samples.count))
+      if rms >= 0.02 { lastSpeechEnd = fed }
+    }
     var chunks: [Range<Int>] = []
     while fed - cut >= maxChunk {
       // Cut in the pause after the latest finished segment that keeps the chunk within bounds.
@@ -97,15 +102,20 @@ public final class SpeechChunker {
 
   /// The speech still pending, as soon as the VAD has closed its latest segment; nil while speaking or
   /// with nothing pending. Lets the caller decode the tail before release: see `isSameSpeech`.
+  private var lastSpeechEnd = 0
+
   public func pendingTail() -> Range<Int>? {
     guard !isSpeaking, let first = segments.first, let last = segments.last else { return nil }
     return max(cut, first.lowerBound - pad)..<last.upperBound
   }
 
   /// Whether `finish`'s chunk holds the same speech as an earlier `pendingTail`, differing at most by
-  /// trailing padding. Any later segment ends after the old one, so it would push `final` past the pad.
+  /// trailing padding. Any later segment ends after the old one, so `lastSpeechEnd` advances past `tail.upperBound`.
   public func isSameSpeech(_ tail: Range<Int>, as final: Range<Int>) -> Bool {
-    final.lowerBound == tail.lowerBound && final.upperBound <= tail.upperBound + pad
+    final.lowerBound == tail.lowerBound
+      && lastSpeechEnd <= tail.upperBound
+      && final.upperBound >= tail.upperBound
+      && final.upperBound <= tail.upperBound + pad
   }
 
   /// The last finished segment, if the VAD has heard nothing since it for at least `settle` samples.
@@ -147,8 +157,12 @@ public final class SpeechChunker {
       SherpaOnnxDestroySpeechSegment(seg)
       SherpaOnnxVoiceActivityDetectorPop(vad)
       // A segment that began before a forced cut only contributes its part after the cut.
-      if end > cut { segments.append(max(start, cut)..<end) }
+      if end > cut {
+        segments.append(max(start, cut)..<end)
+        lastSpeechEnd = end
+      }
     }
+    if isSpeaking { lastSpeechEnd = fed }
   }
 }
 
