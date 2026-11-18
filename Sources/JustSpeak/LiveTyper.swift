@@ -9,24 +9,26 @@ import JustSpeakCore
 @MainActor
 final class LiveTyper {
   private let config: Config.Output
-  /// Frontmost app when the first text was typed: from then on, never type anywhere else.
-  private var pid: pid_t?
-  /// What we have put in the field, as `TypingPlan.rendered`.
-  private var typed = ""
+  /// Frontmost app when recording started: never type into any other app.
+  private let pid: pid_t?
+  private let tracker: LiveTypingTracker
   private var pending: String?
   private var worker: Task<Void, Never>?
   /// Set once the press is confirmed as a dictation (after `hotkey.minHoldMs`), so a stray tap types nothing.
   private var armed = false
   private var finishing = false
-  private var detached = false
   private var began = false
   private var restoreSource: TISInputSource?
 
   private(set) var partials = 0
-  private(set) var deleted = 0
+  var deleted: Int { tracker.deleted }
 
-  init(config: Config.Output) {
+  init(config: Config.Output,
+       pid: pid_t? = NSWorkspace.shared.frontmostApplication?.processIdentifier,
+       frontmostPID: @escaping () -> pid_t? = { NSWorkspace.shared.frontmostApplication?.processIdentifier }) {
     self.config = config
+    self.pid = pid
+    self.tracker = LiveTypingTracker(config: config, targetPID: pid, frontmostPID: frontmostPID)
   }
 
   /// The transcript so far (from `CloudDictation`'s `onPartial`).
@@ -42,14 +44,14 @@ final class LiveTyper {
   }
 
   /// Replace what was typed with `text` and restore the input source. False if the focused app changed
-  /// after text was typed: then nothing is touched and the caller should point at Copy Last Dictation.
+  /// after recording started: then nothing is touched and the caller should point at Copy Last Dictation.
   func finish(_ text: String) async -> Bool {
     finishing = true
     pending = nil
     await worker?.value
     await apply(text)
     await end()
-    return !detached
+    return !tracker.detached
   }
 
   /// Stop typing and leave whatever is in the field (cancel, failed transcription).
@@ -73,26 +75,13 @@ final class LiveTyper {
   }
 
   private func apply(_ text: String) async {
-    guard !detached else { return }
-    let frontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
-    if typed.isEmpty {
-      pid = frontmost
-    } else if frontmost != pid {
-      detached = true
-      Log.info("live typing: focus moved to another app; leaving the field as is")
-      return
-    }
-    let target = TypingPlan.rendered(text, newlines: config.newlines)
-    let edit = TypingPlan.edit(from: typed, to: target)
-    guard edit.delete > 0 || !edit.insert.isEmpty else { return }
+    guard let edit = tracker.nextEdit(for: text) else { return }
     if !began {
       began = true
       restoreSource = await Inserter.beginTyping(config)
     }
     await Inserter.deleteBackward(edit.delete)
     await Inserter.postText(edit.insert, newlines: config.newlines)
-    deleted += edit.delete
-    typed = target
   }
 
   private func end() async {
