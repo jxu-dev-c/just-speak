@@ -48,6 +48,18 @@ public struct Config: Codable, Equatable, Sendable {
   }
 
   public struct Rewrite: Codable, Equatable, Sendable {
+    public struct AppOverride: Codable, Equatable, Sendable {
+      public var enabled: Bool? = nil
+      public var systemPrompt: String? = nil
+      public var newlines: Output.Newlines? = nil
+
+      public init(enabled: Bool? = nil, systemPrompt: String? = nil, newlines: Output.Newlines? = nil) {
+        self.enabled = enabled
+        self.systemPrompt = systemPrompt
+        self.newlines = newlines
+      }
+    }
+
     public var enabled = true
     public var endpoint = "https://api.inceptionlabs.ai/v1/chat/completions"
     public var model = "mercury-3"
@@ -59,6 +71,8 @@ public struct Config: Codable, Equatable, Sendable {
     public var apiKey = ""
     /// nil = built-in prompt (see Rewriter.defaultSystemPrompt).
     public var systemPrompt: String? = nil
+    /// Per-app rules keyed by bundle identifier, glob pattern ("com.jetbrains.*"), or app name ("Slack").
+    public var appOverrides: [String: AppOverride] = [:]
   }
 
   public struct Output: Codable, Equatable, Sendable {

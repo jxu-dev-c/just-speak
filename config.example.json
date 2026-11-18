@@ -42,6 +42,10 @@
     "minChars": 6,             // shorter transcripts skip the rewrite
     "apiKey": "",              // "" = INCEPTION_API_KEY from env or ~/.config/just-speak/.env
     "systemPrompt": null,      // null = built-in prompt
+    "appOverrides": {          // per-app overrides keyed by bundle ID, glob ("com.jetbrains.*"), or app name
+      // "com.apple.Terminal": { "enabled": false, "newlines": "keep" },
+      // "com.tinyspeck.slackmacgap": { "systemPrompt": "Clean up filler words; keep a casual chat tone." },
+    },
   },
 
   "output": {

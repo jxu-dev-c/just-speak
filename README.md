@@ -17,7 +17,8 @@ Hold a key, speak, let go — your words appear, cleaned up, wherever the cursor
   text for a formal email or presentation, in the language you spoke: fillers, false starts and points you repeated
   while thinking aloud are cut, every fact and request is kept, and requests are never answered or carried out. Falls
   back to the raw transcript on any error.
-  Set `rewrite.systemPrompt` to use your own prompt instead.
+  Set `rewrite.systemPrompt` to use your own prompt instead, or configure `rewrite.appOverrides` (keyed by bundle ID,
+  glob pattern such as `"com.jetbrains.*"`, or app name) to customize `enabled`, `systemPrompt`, and `newlines` per app.
 - **Clipboard untouched**: text is typed as synthetic Unicode keystrokes.
 - **Local history**: plain JSONL per month, readable with `jq`/`grep` or `just-speak history`.
 - **JSON config** with hot reload.

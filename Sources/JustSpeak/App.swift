@@ -206,7 +206,7 @@ final class AppController: NSObject, NSApplicationDelegate {
       playSound(config.feedback.stopSound)
       if config.feedback.pill { orb.showProcessing() }
     }
-    let cfg = config
+    let cfg = config.forApp(bundleID: app)
     Task { await process(session, app: app, config: cfg, live: live) }
   }
 
@@ -238,7 +238,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     if cfg.rewrite.enabled && raw.count >= cfg.rewrite.minChars {
       let sw = Stopwatch()
       do {
-        rewritten = try await rewriter.rewrite(raw, hotwords: cfg.hotwords)
+        rewritten = try await rewriter.forConfig(cfg.rewrite).rewrite(raw, hotwords: cfg.hotwords)
       } catch {
         // Never lose a dictation to the network: fall back to the raw transcript.
         Log.info("rewrite failed after \(sw.ms)ms: \(error)")
