@@ -105,6 +105,8 @@ public struct Config: Codable, Equatable, Sendable {
 
   public var hotkey = Hotkey()
   public var hotwords: [String] = []
+  /// Spoken-to-written replacements applied deterministically without using local ASR context.
+  public var replacements: [String: String] = [:]
   public var asr = ASR()
   public var rewrite = Rewrite()
   public var output = Output()

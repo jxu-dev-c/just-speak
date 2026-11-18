@@ -125,7 +125,11 @@ final class AppController: NSObject, NSApplicationDelegate {
     // DispatchQueue.main keeps partials in order (unordered Tasks could make the field flicker back and forth)
     var onPartial: (@Sendable (String) -> Void)?
     if let live {
-      onPartial = { text in DispatchQueue.main.async { live.show(text) } }
+      let replacements = config.replacements
+      onPartial = { text in
+        let replaced = TextReplacements.apply(text, replacements: replacements)
+        DispatchQueue.main.async { live.show(replaced) }
+      }
     }
     do {
       session = try makeDictation(onPartial: onPartial)
@@ -224,7 +228,7 @@ final class AppController: NSObject, NSApplicationDelegate {
       return
     }
     let asrMs = total.ms  // only what was left at release; the rest was transcribed during speech
-    let raw = result.text
+    let raw = TextReplacements.apply(result.text, replacements: cfg.replacements)
     let durationMs = result.durationMs
     guard durationMs >= 300, !raw.isEmpty else {  // too short, or VAD heard no speech
       await live?.stop()
@@ -238,7 +242,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     if cfg.rewrite.enabled && raw.count >= cfg.rewrite.minChars {
       let sw = Stopwatch()
       do {
-        rewritten = try await rewriter.forConfig(cfg.rewrite).rewrite(raw, hotwords: cfg.hotwords)
+        rewritten = try await rewriter.forConfig(cfg.rewrite).rewrite(raw, hotwords: cfg.hotwords,
+                                                                      replacements: cfg.replacements)
       } catch {
         // Never lose a dictation to the network: fall back to the raw transcript.
         Log.info("rewrite failed after \(sw.ms)ms: \(error)")
@@ -246,7 +251,7 @@ final class AppController: NSObject, NSApplicationDelegate {
       }
       rewriteMs = sw.ms
     }
-    let text = rewritten ?? raw
+    let text = TextReplacements.apply(rewritten ?? raw, replacements: cfg.replacements)
     lastText = text
 
     var replaceMs: Int?

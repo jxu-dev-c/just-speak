@@ -12,6 +12,13 @@
   // Keep it to a few dozen: with the local model they share its 512-token context with the audio.
   "hotwords": ["Inception", "Mercury", "sherpa-onnx"],
 
+  // Spoken-to-written replacements applied deterministically (and passed to the rewriter) without
+  // consuming the local ASR model's 512-token audio context.
+  "replacements": {
+    // "dot env": ".env",
+    // "jay x u dev": "jxu-dev-c",
+  },
+
   "asr": {
     "provider": "openai",      // openai = stream audio to OpenAI; local = Fun-ASR-Nano on this Mac (run `just-speak setup`)
     "openai": {

@@ -61,32 +61,40 @@ public final class Rewriter: Sendable {
     }
   }
 
-  public func systemPrompt(hotwords: [String]) -> String {
+  public func systemPrompt(hotwords: [String], replacements: [String: String] = [:]) -> String {
     var p = config.systemPrompt ?? Self.defaultSystemPrompt
     let words = hotwords.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     if !words.isEmpty {
       p += "\n\nPreferred spellings for names and terms (fix near-homophones to these): "
         + words.joined(separator: ", ")
     }
+    let pairs = replacements
+      .map { ($0.key.trimmingCharacters(in: .whitespacesAndNewlines), $0.value) }
+      .filter { !$0.0.isEmpty }
+      .sorted { $0.0.lowercased() < $1.0.lowercased() }
+    if !pairs.isEmpty {
+      p += "\n\nSpoken-to-written replacements (always use the written form): "
+        + pairs.map { "\"\($0.0)\" -> \"\($0.1)\"" }.joined(separator: ", ")
+    }
     return p
   }
 
   /// System prompt, then (built-in prompt only) the example turns, then the transcript.
-  public func messages(transcript: String, hotwords: [String]) -> [[String: String]] {
+  public func messages(transcript: String, hotwords: [String], replacements: [String: String] = [:]) -> [[String: String]] {
     func user(_ t: String) -> [String: String] { ["role": "user", "content": "<transcript>\n\(t)\n</transcript>"] }
-    var m = [["role": "system", "content": systemPrompt(hotwords: hotwords)]]
+    var m = [["role": "system", "content": systemPrompt(hotwords: hotwords, replacements: replacements)]]
     if config.systemPrompt == nil {  // a custom prompt shouldn't be steered by our examples
       for ex in Self.defaultExamples { m += [user(ex.transcript), ["role": "assistant", "content": ex.rewrite]] }
     }
     return m + [user(transcript)]
   }
 
-  public func makeRequest(transcript: String, hotwords: [String]) throws -> URLRequest {
+  public func makeRequest(transcript: String, hotwords: [String], replacements: [String: String] = [:]) throws -> URLRequest {
     guard let apiKey, !apiKey.isEmpty else { throw RewriteError.missingAPIKey }
     guard let url = URL(string: config.endpoint) else { throw RewriteError.badResponse }
     var body: [String: Any] = [
       "model": config.model,
-      "messages": messages(transcript: transcript, hotwords: hotwords),
+      "messages": messages(transcript: transcript, hotwords: hotwords, replacements: replacements),
       "temperature": 0,
       "stream": false,
       // CJK is ~1 token per character; leave room for punctuation and list formatting.
@@ -102,8 +110,9 @@ public final class Rewriter: Sendable {
     return req
   }
 
-  public func rewrite(_ transcript: String, hotwords: [String]) async throws -> String {
-    let req = try makeRequest(transcript: transcript, hotwords: hotwords)
+  public func rewrite(_ transcript: String, hotwords: [String], replacements: [String: String] = [:]) async throws -> String {
+    let pre = TextReplacements.apply(transcript, replacements: replacements)
+    let req = try makeRequest(transcript: pre, hotwords: hotwords, replacements: replacements)
     let (data, resp) = try await session.data(for: req)
     let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
     guard status == 200 else { throw RewriteError.http(status, String(decoding: data, as: UTF8.self)) }
@@ -113,7 +122,7 @@ public final class Rewriter: Sendable {
       let message = choices.first?["message"] as? [String: Any],
       let content = message["content"] as? String
     else { throw RewriteError.badResponse }
-    let text = Self.clean(content)
+    let text = TextReplacements.apply(Self.clean(content), replacements: replacements)
     guard !text.isEmpty else { throw RewriteError.badResponse }
     return text
   }

@@ -142,7 +142,9 @@ a single pass truncates past ~20 s. Silero VAD cuts a recording at the first pau
 (or at the latest pause before 18 s if there is none), and the speech since the last pause is decoded
 whenever you pause, so release latency stays flat however long you talk. Silence is trimmed, and a
 recording with no speech is ignored.
-Keep `hotwords` to a few dozen entries — they share that context.
+Keep `hotwords` to a few dozen entries — they share that context. For explicit spoken-to-written mappings
+(e.g. `"dot env": ".env"`, `"jay x u dev": "jxu-dev-c"`) or larger vocabularies that shouldn't consume local ASR
+context, use `replacements` in `config.json`.
 
 ## Use
 
