@@ -51,7 +51,10 @@ final class AppController: NSObject, NSApplicationDelegate {
       toggleLaunchAtLogin: { Self.toggleLaunchAtLogin() },
       launchAtLogin: { SMAppService.mainApp.status == .enabled },
       requestPermissions: { [weak self] in self?.requestPermissions(openSettings: true) },
-      missingPermissions: { [weak self] in self?.missingPermissions().map(\.rawValue) ?? [] }
+      missingPermissions: { [weak self] in self?.missingPermissions().map(\.rawValue) ?? [] },
+      inputDevices: { AudioRecorder.inputDevices() },
+      selectedInputDevice: { [weak self] in self?.config.audio.inputDevice ?? "" },
+      selectInputDevice: { [weak self] uid in self?.selectInputDevice(uid) }
     ))
 
     do {
@@ -142,7 +145,7 @@ final class AppController: NSObject, NSApplicationDelegate {
       return
     }
     do {
-      try recorder.start(sampleRate: session.sampleRate) { [weak self] samples in
+      try recorder.start(sampleRate: session.sampleRate, preferredDevice: config.audio.inputDevice) { [weak self] samples in
         session.feed(samples)
         guard feedback.pill else { return }
         var rms: Float = 0
@@ -310,6 +313,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     if new.asr.openai != old.asr.openai || new.hotwords != old.hotwords { openAI = makeOpenAI(new) }
     if new.rewrite != old.rewrite { rewriter = Rewriter(config: new.rewrite, apiKey: new.resolvedAPIKey()) }
     if new.history != old.history { setUpHistory() }
+    if new.audio != old.audio { recorder.preferredDevice = new.audio.inputDevice }
     Log.info("config reloaded")
   }
 
@@ -390,6 +394,12 @@ final class AppController: NSObject, NSApplicationDelegate {
     guard let lastText else { return }
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(lastText, forType: .string)
+  }
+
+  private func selectInputDevice(_ uid: String) {
+    config.audio.inputDevice = uid
+    recorder.preferredDevice = uid
+    try? config.prettyJSON().write(to: Paths.configFile, options: .atomic)
   }
 
   private static func toggleLaunchAtLogin() {

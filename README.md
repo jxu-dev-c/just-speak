@@ -159,6 +159,8 @@ text is in. It only shows words for errors. Both are configurable under `feedbac
 The screenshots above are rendered from the real orb view with `just-speak render-orb docs`.
 
 Menu bar icon: 🎤 idle · rose mic recording · ⋯ processing · ⚠︎ something needs attention (open the menu).
+Use the **Microphone** submenu (or set `audio.inputDevice` in `config.json`) to pin a specific input device such as the
+built-in microphone instead of a Bluetooth headset; when disconnected, it falls back to the macOS system default.
 
 Config: `~/.config/just-speak/config.json` — see [`config.example.json`](config.example.json).
 

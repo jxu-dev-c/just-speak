@@ -76,4 +76,8 @@
     "enabled": true,
     "retentionDays": 0,        // 0 = keep forever
   },
+
+  "audio": {
+    "inputDevice": "",         // "" = system default; or a device UID/name (e.g. "MacBook Pro Microphone")
+  },
 }

@@ -103,6 +103,14 @@ public struct Config: Codable, Equatable, Sendable {
     public var retentionDays = 0
   }
 
+  public struct Audio: Codable, Equatable, Sendable {
+    /// Preferred input device UID or name; "" = macOS system default input device.
+    public var inputDevice = ""
+    public init(inputDevice: String = "") {
+      self.inputDevice = inputDevice
+    }
+  }
+
   public var hotkey = Hotkey()
   public var hotwords: [String] = []
   /// Spoken-to-written replacements applied deterministically without using local ASR context.
@@ -112,6 +120,7 @@ public struct Config: Codable, Equatable, Sendable {
   public var output = Output()
   public var feedback = Feedback()
   public var history = History()
+  public var audio = Audio()
 
   public init() {}
 
