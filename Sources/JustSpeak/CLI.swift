@@ -142,6 +142,11 @@ enum CLI {
       case "--threads": config.asr.numThreads = Int(it.next() ?? "") ?? config.asr.numThreads
       case "--ep": executionProvider = it.next() ?? executionProvider
       case "--hotwords": config.hotwords = (it.next() ?? "").split(separator: ",").map(String.init)
+      case "--replace":
+        for pair in (it.next() ?? "").split(separator: ",") {
+          let parts = pair.split(separator: "=", maxSplits: 1).map(String.init)
+          if parts.count == 2 { config.replacements[parts[0]] = parts[1] }
+        }
       case "--whole": whole = true
       case "--realtime": realtime = true
       default: files.append(a)
@@ -157,7 +162,8 @@ enum CLI {
                        realtime: realtime)
         let t = Stopwatch()
         let result = try await session.finish()
-        report(f, audioMs: result.durationMs, asrMs: t.ms, chunks: 1, text: result.text)
+        let text = TextReplacements.apply(result.text, replacements: config.replacements)
+        report(f, audioMs: result.durationMs, asrMs: t.ms, chunks: 1, text: text)
         print("  \(result.logDetail)")
       }
       return 0
@@ -173,7 +179,8 @@ enum CLI {
       for f in files {
         guard let w = Wave.read(f) else { print("cannot read \(f)"); continue }
         let t = Stopwatch()
-        let text = model.transcribe(w.samples, sampleRate: w.sampleRate, options: opts)
+        let raw = model.transcribe(w.samples, sampleRate: w.sampleRate, options: opts)
+        let text = TextReplacements.apply(raw, replacements: config.replacements)
         report(f, audioMs: w.samples.count * 1000 / w.sampleRate, asrMs: t.ms, chunks: 1, text: text)
       }
       return 0
@@ -192,8 +199,9 @@ enum CLI {
       try await feed(w.samples, to: session, realtime: realtime)
       let t = Stopwatch()
       let result = try await session.finishWithChunks()
+      let text = TextReplacements.apply(result.text, replacements: config.replacements)
       let spans = result.chunks.map { String(format: "%.1f–%.1fs", Double($0.lowerBound) / 16000, Double($0.upperBound) / 16000) }
-      report(f, audioMs: result.durationMs, asrMs: t.ms, chunks: result.chunks.count, text: result.text)
+      report(f, audioMs: result.durationMs, asrMs: t.ms, chunks: result.chunks.count, text: text)
       print("  chunks: \(spans.joined(separator: ", "))  tail \(result.tailMs)ms"
         + (result.tailReused ? " (decoded before release)" : ""))
     }
@@ -251,7 +259,7 @@ enum CLI {
     if text.isEmpty { text = String(decoding: FileHandle.standardInput.readDataToEndOfFile(), as: UTF8.self) }
     let rewriter = Rewriter(config: config.rewrite, apiKey: config.resolvedAPIKey())
     let sw = Stopwatch()
-    let out = try await rewriter.rewrite(text, hotwords: config.hotwords)
+    let out = try await rewriter.rewrite(text, hotwords: config.hotwords, replacements: config.replacements)
     FileHandle.standardError.write(Data("rewrite \(sw.ms)ms\n".utf8))
     print(out)
     return 0

@@ -66,3 +66,91 @@ public enum TypingPlan {
     if !chunk.isEmpty { steps.append(.text(chunk)) }
   }
 }
+
+/// Applies deterministic spoken-to-written phrase replacements without consuming local ASR context.
+public enum TextReplacements {
+  public static func apply(_ text: String, replacements: [String: String]) -> String {
+    guard !text.isEmpty, !replacements.isEmpty else { return text }
+    let rules: [(spoken: [Character], spokenLower: [String], written: String, writtenChars: [Character])] = replacements
+      .compactMap { k, v in
+        let trimmed = k.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let chars = Array(trimmed)
+        return (chars, chars.map { String($0).lowercased() }, v, Array(v))
+      }
+      .sorted { a, b in
+        if a.spoken.count != b.spoken.count { return a.spoken.count > b.spoken.count }
+        return a.spokenLower.joined() < b.spokenLower.joined()
+      }
+    guard !rules.isEmpty else { return text }
+
+    let chars = Array(text)
+    let lowers = chars.map { String($0).lowercased() }
+    var out: [Character] = []
+    out.reserveCapacity(chars.count)
+
+    var i = 0
+    while i < chars.count {
+      var matched = false
+      for rule in rules {
+        let len = rule.spoken.count
+        guard i + len <= chars.count else { continue }
+        var ok = true
+        for j in 0..<len where lowers[i + j] != rule.spokenLower[j] {
+          ok = false
+          break
+        }
+        guard ok else { continue }
+
+        // Check word boundaries when the spoken key begins/ends with a non-CJK word character.
+        if let first = rule.spoken.first, isWordChar(first), i > 0, isWordChar(chars[i - 1]) {
+          continue
+        }
+        if let last = rule.spoken.last, isWordChar(last), i + len < chars.count, isWordChar(chars[i + len]) {
+          continue
+        }
+
+        // Avoid double-applying when `written` already wraps this exact occurrence in `text` (e.g. "env" -> ".env" on ".env").
+        if alreadyMatchesWritten(chars: chars, lowers: lowers, at: i, spokenLen: len, written: rule.writtenChars) {
+          out.append(contentsOf: chars[i..<(i + len)])
+          i += len
+          matched = true
+          break
+        }
+
+        out.append(contentsOf: rule.writtenChars)
+        i += len
+        matched = true
+        break
+      }
+      if !matched {
+        out.append(chars[i])
+        i += 1
+      }
+    }
+    return String(out)
+  }
+
+  private static func isWordChar(_ ch: Character) -> Bool {
+    guard let scalar = ch.unicodeScalars.first else { return false }
+    if TranscriptJoiner.isCJK(scalar) { return false }
+    return ch.isLetter || ch.isNumber
+  }
+
+  private static func alreadyMatchesWritten(chars: [Character], lowers: [String], at index: Int,
+                                            spokenLen: Int, written: [Character]) -> Bool {
+    guard written.count > spokenLen else { return false }
+    let wLowers = written.map { String($0).lowercased() }
+    let sLowers = Array(lowers[index..<(index + spokenLen)])
+    for offset in 0...(written.count - spokenLen) {
+      guard Array(wLowers[offset..<(offset + spokenLen)]) == sLowers else { continue }
+      let start = index - offset
+      let end = start + written.count
+      guard start >= 0, end <= chars.count else { continue }
+      if Array(lowers[start..<end]) == wLowers {
+        return true
+      }
+    }
+    return false
+  }
+}

@@ -17,7 +17,8 @@ Hold a key, speak, let go — your words appear, cleaned up, wherever the cursor
   text for a formal email or presentation, in the language you spoke: fillers, false starts and points you repeated
   while thinking aloud are cut, every fact and request is kept, and requests are never answered or carried out. Falls
   back to the raw transcript on any error.
-  Set `rewrite.systemPrompt` to use your own prompt instead.
+  Set `rewrite.systemPrompt` to use your own prompt instead, or configure `rewrite.appOverrides` (keyed by bundle ID,
+  glob pattern such as `"com.jetbrains.*"`, or app name) to customize `enabled`, `systemPrompt`, and `newlines` per app.
 - **Clipboard untouched**: text is typed as synthetic Unicode keystrokes.
 - **Local history**: plain JSONL per month, readable with `jq`/`grep` or `just-speak history`.
 - **JSON config** with hot reload.
@@ -141,7 +142,9 @@ a single pass truncates past ~20 s. Silero VAD cuts a recording at the first pau
 (or at the latest pause before 18 s if there is none), and the speech since the last pause is decoded
 whenever you pause, so release latency stays flat however long you talk. Silence is trimmed, and a
 recording with no speech is ignored.
-Keep `hotwords` to a few dozen entries — they share that context.
+Keep `hotwords` to a few dozen entries — they share that context. For explicit spoken-to-written mappings
+(e.g. `"dot env": ".env"`, `"jay x u dev": "jxu-dev-c"`) or larger vocabularies that shouldn't consume local ASR
+context, use `replacements` in `config.json`.
 
 ## Use
 
@@ -156,6 +159,8 @@ text is in. It only shows words for errors. Both are configurable under `feedbac
 The screenshots above are rendered from the real orb view with `just-speak render-orb docs`.
 
 Menu bar icon: 🎤 idle · rose mic recording · ⋯ processing · ⚠︎ something needs attention (open the menu).
+Use the **Microphone** submenu (or set `audio.inputDevice` in `config.json`) to pin a specific input device such as the
+built-in microphone instead of a Bluetooth headset; when disconnected, it falls back to the macOS system default.
 
 Config: `~/.config/just-speak/config.json` — see [`config.example.json`](config.example.json).
 

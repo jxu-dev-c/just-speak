@@ -51,7 +51,10 @@ final class AppController: NSObject, NSApplicationDelegate {
       toggleLaunchAtLogin: { Self.toggleLaunchAtLogin() },
       launchAtLogin: { SMAppService.mainApp.status == .enabled },
       requestPermissions: { [weak self] in self?.requestPermissions(openSettings: true) },
-      missingPermissions: { [weak self] in self?.missingPermissions().map(\.rawValue) ?? [] }
+      missingPermissions: { [weak self] in self?.missingPermissions().map(\.rawValue) ?? [] },
+      inputDevices: { AudioRecorder.inputDevices() },
+      selectedInputDevice: { [weak self] in self?.config.audio.inputDevice ?? "" },
+      selectInputDevice: { [weak self] uid in self?.selectInputDevice(uid) }
     ))
 
     do {
@@ -125,7 +128,11 @@ final class AppController: NSObject, NSApplicationDelegate {
     // DispatchQueue.main keeps partials in order (unordered Tasks could make the field flicker back and forth)
     var onPartial: (@Sendable (String) -> Void)?
     if let live {
-      onPartial = { text in DispatchQueue.main.async { live.show(text) } }
+      let replacements = config.replacements
+      onPartial = { text in
+        let replaced = TextReplacements.apply(text, replacements: replacements)
+        DispatchQueue.main.async { live.show(replaced) }
+      }
     }
     do {
       session = try makeDictation(onPartial: onPartial)
@@ -138,7 +145,7 @@ final class AppController: NSObject, NSApplicationDelegate {
       return
     }
     do {
-      try recorder.start(sampleRate: session.sampleRate) { [weak self] samples in
+      try recorder.start(sampleRate: session.sampleRate, preferredDevice: config.audio.inputDevice) { [weak self] samples in
         session.feed(samples)
         guard feedback.pill else { return }
         var rms: Float = 0
@@ -206,7 +213,7 @@ final class AppController: NSObject, NSApplicationDelegate {
       playSound(config.feedback.stopSound)
       if config.feedback.pill { orb.showProcessing() }
     }
-    let cfg = config
+    let cfg = config.forApp(bundleID: app)
     Task { await process(session, app: app, config: cfg, live: live) }
   }
 
@@ -224,7 +231,7 @@ final class AppController: NSObject, NSApplicationDelegate {
       return
     }
     let asrMs = total.ms  // only what was left at release; the rest was transcribed during speech
-    let raw = result.text
+    let raw = TextReplacements.apply(result.text, replacements: cfg.replacements)
     let durationMs = result.durationMs
     guard durationMs >= 300, !raw.isEmpty else {  // too short, or VAD heard no speech
       await live?.stop()
@@ -238,7 +245,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     if cfg.rewrite.enabled && raw.count >= cfg.rewrite.minChars {
       let sw = Stopwatch()
       do {
-        rewritten = try await rewriter.rewrite(raw, hotwords: cfg.hotwords)
+        rewritten = try await rewriter.forConfig(cfg.rewrite).rewrite(raw, hotwords: cfg.hotwords,
+                                                                      replacements: cfg.replacements)
       } catch {
         // Never lose a dictation to the network: fall back to the raw transcript.
         Log.info("rewrite failed after \(sw.ms)ms: \(error)")
@@ -246,7 +254,7 @@ final class AppController: NSObject, NSApplicationDelegate {
       }
       rewriteMs = sw.ms
     }
-    let text = rewritten ?? raw
+    let text = TextReplacements.apply(rewritten ?? raw, replacements: cfg.replacements)
     lastText = text
 
     var replaceMs: Int?
@@ -305,6 +313,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     if new.asr.openai != old.asr.openai || new.hotwords != old.hotwords { openAI = makeOpenAI(new) }
     if new.rewrite != old.rewrite { rewriter = Rewriter(config: new.rewrite, apiKey: new.resolvedAPIKey()) }
     if new.history != old.history { setUpHistory() }
+    if new.audio != old.audio { recorder.preferredDevice = new.audio.inputDevice }
     Log.info("config reloaded")
   }
 
@@ -385,6 +394,12 @@ final class AppController: NSObject, NSApplicationDelegate {
     guard let lastText else { return }
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(lastText, forType: .string)
+  }
+
+  private func selectInputDevice(_ uid: String) {
+    config.audio.inputDevice = uid
+    recorder.preferredDevice = uid
+    try? config.prettyJSON().write(to: Paths.configFile, options: .atomic)
   }
 
   private static func toggleLaunchAtLogin() {

@@ -1,4 +1,5 @@
 import AppKit
+import JustSpeakCore
 
 /// Menu-bar icon reflecting pipeline state. The menu is rebuilt on open so it is always current.
 @MainActor
@@ -14,6 +15,9 @@ final class StatusItem: NSObject, NSMenuDelegate {
     var launchAtLogin: () -> Bool
     var requestPermissions: () -> Void
     var missingPermissions: () -> [String]
+    var inputDevices: () -> [AudioInputDevice] = { [] }
+    var selectedInputDevice: () -> String = { "" }
+    var selectInputDevice: (String) -> Void = { _ in }
   }
 
   private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -67,6 +71,7 @@ final class StatusItem: NSObject, NSMenuDelegate {
     if message != nil || lastSummary != nil { menu.addItem(.separator()) }
 
     menu.addItem(withTitle: "Copy Last Dictation", action: #selector(copyLast), keyEquivalent: "").target = self
+    menu.addItem(makeMicrophoneMenuItem())
     menu.addItem(withTitle: "Open Config…", action: #selector(openConfig), keyEquivalent: ",").target = self
     menu.addItem(withTitle: "Reveal History Folder", action: #selector(revealHistory), keyEquivalent: "").target = self
     menu.addItem(withTitle: "Unload Model", action: #selector(unloadModel), keyEquivalent: "").target = self
@@ -95,4 +100,42 @@ final class StatusItem: NSObject, NSMenuDelegate {
   @objc private func unloadModel() { actions.unloadModel() }
   @objc private func toggleLogin() { actions.toggleLaunchAtLogin() }
   @objc private func requestPermissions() { actions.requestPermissions() }
+
+  private func makeMicrophoneMenuItem() -> NSMenuItem {
+    let root = NSMenuItem(title: "Microphone", action: nil, keyEquivalent: "")
+    let sub = NSMenu(title: "Microphone")
+    let selected = actions.selectedInputDevice().trimmingCharacters(in: .whitespacesAndNewlines)
+    let devices = actions.inputDevices()
+    let resolved = AudioInputDevice.resolve(preferred: selected, available: devices)
+
+    let systemItem = NSMenuItem(title: "System Default", action: #selector(selectDevice(_:)), keyEquivalent: "")
+    systemItem.target = self
+    systemItem.representedObject = ""
+    systemItem.state = selected.isEmpty ? .on : .off
+    sub.addItem(systemItem)
+
+    if !devices.isEmpty {
+      sub.addItem(.separator())
+      for d in devices {
+        let item = NSMenuItem(title: d.name, action: #selector(selectDevice(_:)), keyEquivalent: "")
+        item.target = self
+        item.representedObject = d.uid
+        item.state = (!selected.isEmpty && resolved?.uid == d.uid) ? .on : .off
+        sub.addItem(item)
+      }
+    }
+    if !selected.isEmpty && resolved == nil {
+      sub.addItem(.separator())
+      let missing = disabled("\(selected) (disconnected — using System Default)")
+      missing.state = .on
+      sub.addItem(missing)
+    }
+    root.submenu = sub
+    return root
+  }
+
+  @objc private func selectDevice(_ sender: NSMenuItem) {
+    guard let uid = sender.representedObject as? String else { return }
+    actions.selectInputDevice(uid)
+  }
 }

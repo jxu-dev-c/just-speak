@@ -61,32 +61,40 @@ public final class Rewriter: Sendable {
     }
   }
 
-  public func systemPrompt(hotwords: [String]) -> String {
+  public func systemPrompt(hotwords: [String], replacements: [String: String] = [:]) -> String {
     var p = config.systemPrompt ?? Self.defaultSystemPrompt
     let words = hotwords.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     if !words.isEmpty {
       p += "\n\nPreferred spellings for names and terms (fix near-homophones to these): "
         + words.joined(separator: ", ")
     }
+    let pairs = replacements
+      .map { ($0.key.trimmingCharacters(in: .whitespacesAndNewlines), $0.value) }
+      .filter { !$0.0.isEmpty }
+      .sorted { $0.0.lowercased() < $1.0.lowercased() }
+    if !pairs.isEmpty {
+      p += "\n\nSpoken-to-written replacements (always use the written form): "
+        + pairs.map { "\"\($0.0)\" -> \"\($0.1)\"" }.joined(separator: ", ")
+    }
     return p
   }
 
   /// System prompt, then (built-in prompt only) the example turns, then the transcript.
-  public func messages(transcript: String, hotwords: [String]) -> [[String: String]] {
+  public func messages(transcript: String, hotwords: [String], replacements: [String: String] = [:]) -> [[String: String]] {
     func user(_ t: String) -> [String: String] { ["role": "user", "content": "<transcript>\n\(t)\n</transcript>"] }
-    var m = [["role": "system", "content": systemPrompt(hotwords: hotwords)]]
+    var m = [["role": "system", "content": systemPrompt(hotwords: hotwords, replacements: replacements)]]
     if config.systemPrompt == nil {  // a custom prompt shouldn't be steered by our examples
       for ex in Self.defaultExamples { m += [user(ex.transcript), ["role": "assistant", "content": ex.rewrite]] }
     }
     return m + [user(transcript)]
   }
 
-  public func makeRequest(transcript: String, hotwords: [String]) throws -> URLRequest {
+  public func makeRequest(transcript: String, hotwords: [String], replacements: [String: String] = [:]) throws -> URLRequest {
     guard let apiKey, !apiKey.isEmpty else { throw RewriteError.missingAPIKey }
     guard let url = URL(string: config.endpoint) else { throw RewriteError.badResponse }
     var body: [String: Any] = [
       "model": config.model,
-      "messages": messages(transcript: transcript, hotwords: hotwords),
+      "messages": messages(transcript: transcript, hotwords: hotwords, replacements: replacements),
       "temperature": 0,
       "stream": false,
       // CJK is ~1 token per character; leave room for punctuation and list formatting.
@@ -102,8 +110,9 @@ public final class Rewriter: Sendable {
     return req
   }
 
-  public func rewrite(_ transcript: String, hotwords: [String]) async throws -> String {
-    let req = try makeRequest(transcript: transcript, hotwords: hotwords)
+  public func rewrite(_ transcript: String, hotwords: [String], replacements: [String: String] = [:]) async throws -> String {
+    let pre = TextReplacements.apply(transcript, replacements: replacements)
+    let req = try makeRequest(transcript: pre, hotwords: hotwords, replacements: replacements)
     let (data, resp) = try await session.data(for: req)
     let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
     guard status == 200 else { throw RewriteError.http(status, String(decoding: data, as: UTF8.self)) }
@@ -113,7 +122,7 @@ public final class Rewriter: Sendable {
       let message = choices.first?["message"] as? [String: Any],
       let content = message["content"] as? String
     else { throw RewriteError.badResponse }
-    let text = Self.clean(content)
+    let text = TextReplacements.apply(Self.clean(content), replacements: replacements)
     guard !text.isEmpty else { throw RewriteError.badResponse }
     return text
   }
@@ -131,5 +140,108 @@ public final class Rewriter: Sendable {
     var t = s.trimmingCharacters(in: .whitespacesAndNewlines)
     for tag in ["<transcript>", "</transcript>"] { t = t.replacingOccurrences(of: tag, with: "") }
     return t.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  /// Returns a rewriter using `rewriteConfig`, reusing the existing URLSession connection pool.
+  public func forConfig(_ rewriteConfig: Config.Rewrite) -> Rewriter {
+    guard rewriteConfig != config else { return self }
+    return Rewriter(config: rewriteConfig, apiKey: apiKey, session: session)
+  }
+
+  /// Returns a rewriter with any matching per-app override applied for `bundleID` / `appName`.
+  public func forApp(bundleID: String?, appName: String? = nil) -> Rewriter {
+    var cfg = config
+    if let override = config.appOverride(forBundleID: bundleID, appName: appName) {
+      if let enabled = override.enabled { cfg.enabled = enabled }
+      if let prompt = override.systemPrompt { cfg.systemPrompt = prompt }
+    }
+    return forConfig(cfg)
+  }
+}
+
+extension Config.Rewrite {
+  /// Resolves the best-matching per-app override for `bundleID` and optional `appName`.
+  /// Precedence: exact bundle ID -> case-insensitive bundle ID -> exact app name -> case-insensitive app name -> wildcard pattern.
+  public func appOverride(forBundleID bundleID: String?, appName: String? = nil) -> AppOverride? {
+    guard !appOverrides.isEmpty else { return nil }
+    let bid = bundleID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let name = appName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+    if !bid.isEmpty {
+      if let exact = appOverrides[bid] { return exact }
+      if let ci = appOverrides.first(where: { !Self.isGlob($0.key) && $0.key.caseInsensitiveCompare(bid) == .orderedSame })?.value {
+        return ci
+      }
+    }
+    if !name.isEmpty {
+      if let exact = appOverrides[name] { return exact }
+      if let ci = appOverrides.first(where: { !Self.isGlob($0.key) && $0.key.caseInsensitiveCompare(name) == .orderedSame })?.value {
+        return ci
+      }
+    }
+
+    let globs = appOverrides.filter { Self.isGlob($0.key) }.sorted { a, b in
+      let sa = Self.specificity(a.key)
+      let sb = Self.specificity(b.key)
+      return sa != sb ? sa > sb : a.key < b.key
+    }
+    for (pattern, override) in globs {
+      if (!bid.isEmpty && Self.globMatch(pattern: pattern, text: bid))
+        || (!name.isEmpty && Self.globMatch(pattern: pattern, text: name)) {
+        return override
+      }
+    }
+    return nil
+  }
+
+  private static func isGlob(_ key: String) -> Bool {
+    key.contains("*") || key.contains("?")
+  }
+
+  private static func specificity(_ pattern: String) -> Int {
+    pattern.filter { $0 != "*" && $0 != "?" }.count
+  }
+
+  private static func globMatch(pattern: String, text: String) -> Bool {
+    var regex = "^"
+    for ch in pattern {
+      switch ch {
+      case "*": regex += ".*"
+      case "?": regex += "."
+      default: regex += NSRegularExpression.escapedPattern(for: String(ch))
+      }
+    }
+    regex += "$"
+    return text.range(of: regex, options: [.regularExpression, .caseInsensitive]) != nil
+  }
+}
+
+extension Config {
+  public func appOverride(forBundleID bundleID: String?, appName: String? = nil) -> Rewrite.AppOverride? {
+    rewrite.appOverride(forBundleID: bundleID, appName: appName)
+  }
+
+  public func effectiveRewrite(forBundleID bundleID: String?, appName: String? = nil) -> Rewrite {
+    var out = rewrite
+    if let override = appOverride(forBundleID: bundleID, appName: appName) {
+      if let enabled = override.enabled { out.enabled = enabled }
+      if let prompt = override.systemPrompt { out.systemPrompt = prompt }
+    }
+    return out
+  }
+
+  public func effectiveOutput(forBundleID bundleID: String?, appName: String? = nil) -> Output {
+    var out = output
+    if let override = appOverride(forBundleID: bundleID, appName: appName), let newlines = override.newlines {
+      out.newlines = newlines
+    }
+    return out
+  }
+
+  public func forApp(bundleID: String?, appName: String? = nil) -> Config {
+    var out = self
+    out.rewrite = effectiveRewrite(forBundleID: bundleID, appName: appName)
+    out.output = effectiveOutput(forBundleID: bundleID, appName: appName)
+    return out
   }
 }
