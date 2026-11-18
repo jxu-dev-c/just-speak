@@ -41,6 +41,7 @@ final class AppController: NSObject, NSApplicationDelegate {
   private let orb = Orb()
   /// Whether the current recording has been confirmed as a dictation (sound played, orb shown).
   private var announced = false
+  private var stoppingToggle = false
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     status = StatusItem(actions: .init(
@@ -84,10 +85,15 @@ final class AppController: NSObject, NSApplicationDelegate {
   private func handle(_ event: HotkeyMonitor.Event) {
     switch (config.hotkey.mode, event, state) {
     case (_, .cancelled, .recording):
-      cancelRecording()
+      if config.hotkey.mode == .toggle && stoppingToggle {
+        stoppingToggle = false
+      } else {
+        cancelRecording()
+      }
     case (_, .released, .idle), (_, .cancelled, .idle):
       preloadWork?.cancel()  // a pending "can't record" message for a press that turned out to be a tap
     case (.hold, .pressed, .idle), (.toggle, .pressed, .idle):
+      stoppingToggle = false
       beginRecording()
     case (.hold, .released, .recording(let startedAt, _)):
       if Date().timeIntervalSince(startedAt) * 1000 < Double(config.hotkey.minHoldMs) {
@@ -96,7 +102,16 @@ final class AppController: NSObject, NSApplicationDelegate {
         finishRecording()
       }
     case (.toggle, .pressed, .recording):
-      finishRecording()
+      stoppingToggle = true
+    case (.toggle, .released, .recording):
+      if stoppingToggle {
+        stoppingToggle = false
+        finishRecording()
+      } else if !announced {
+        preloadWork?.perform()
+        preloadWork?.cancel()
+        preloadWork = nil
+      }
     default:
       break
     }
@@ -123,7 +138,7 @@ final class AppController: NSObject, NSApplicationDelegate {
   private func beginRecording() {
     let feedback = config.feedback
     let session: any Dictation
-    let delay = config.hotkey.mode == .hold ? config.hotkey.minHoldMs : 0
+    let delay = config.hotkey.minHoldMs
     let live = streams ? LiveTyper(config: config.output) : nil
     // DispatchQueue.main keeps partials in order (unordered Tasks could make the field flicker back and forth)
     var onPartial: (@Sendable (String) -> Void)?
@@ -168,7 +183,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     // and load the local model and open the rewrite connection while the user is still talking.
     // (The OpenAI socket is already connecting: a stray tap only costs a handshake.)
     let work = DispatchWorkItem { [weak self] in
-      guard let self, case .recording = self.state else { return }
+      guard let self, case .recording = self.state, !self.announced else { return }
       self.announced = true
       self.live?.arm()
       self.playSound(self.config.feedback.startSound)

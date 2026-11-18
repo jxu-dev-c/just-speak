@@ -34,6 +34,7 @@ final class AudioRecorder: @unchecked Sendable {
       throw NSError(domain: "just-speak", code: 1, userInfo: [NSLocalizedDescriptionKey: "no usable input device"])
     }
     let ratio = target.sampleRate / format.sampleRate
+    input.removeTap(onBus: 0)
     input.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
       let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 32
       guard let out = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: capacity) else { return }
@@ -52,8 +53,13 @@ final class AudioRecorder: @unchecked Sendable {
       guard error == nil, let ch = out.floatChannelData?[0], out.frameLength > 0 else { return }
       onSamples(Array(UnsafeBufferPointer(start: ch, count: Int(out.frameLength))))
     }
-    engine.prepare()
-    try engine.start()
+    do {
+      engine.prepare()
+      try engine.start()
+    } catch {
+      input.removeTap(onBus: 0)
+      throw error
+    }
   }
 
   func stop() {
