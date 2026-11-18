@@ -126,12 +126,31 @@ extension Config {
       throw ConfigError.invalid("not valid JSON (\(error.localizedDescription))")
     }
     guard let userDict = user as? [String: Any] else { throw ConfigError.invalid("top level must be an object") }
+    try validateJSONValue(userDict, path: [])
     let merged = deepMerge(defaults, userDict)
     do {
       return try JSONDecoder().decode(Config.self, from: JSONSerialization.data(withJSONObject: merged))
-    } catch let DecodingError.typeMismatch(_, ctx), let DecodingError.dataCorrupted(ctx) {
+    } catch let DecodingError.typeMismatch(_, ctx),
+            let DecodingError.valueNotFound(_, ctx),
+            let DecodingError.keyNotFound(_, ctx),
+            let DecodingError.dataCorrupted(ctx) {
       let path = ctx.codingPath.map(\.stringValue).joined(separator: ".")
       throw ConfigError.invalid("bad value at \(path): \(ctx.debugDescription)")
+    }
+  }
+
+  private static func validateJSONValue(_ value: Any, path: [String]) throws {
+    if let num = value as? NSNumber, !num.doubleValue.isFinite {
+      let loc = path.joined(separator: ".")
+      throw ConfigError.invalid("bad value at \(loc): number is not finite")
+    } else if let dict = value as? [String: Any] {
+      for (k, v) in dict {
+        try validateJSONValue(v, path: path + [k])
+      }
+    } else if let arr = value as? [Any] {
+      for (i, v) in arr.enumerated() {
+        try validateJSONValue(v, path: path + ["Index \(i)"])
+      }
     }
   }
 

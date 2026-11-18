@@ -53,6 +53,28 @@ import Testing
     } throws: { "\($0)".contains("output.method") }
   }
 
+  @Test func rejectsNonFiniteJSON5NumbersAndNullArrayElements() {
+    for raw in [
+      #"{"feedback": {"volume": Infinity}}"#,
+      #"{"feedback": {"volume": -Infinity}}"#,
+      #"{"feedback": {"volume": NaN}}"#,
+    ] {
+      #expect {
+        try Config.decode(Data(raw.utf8))
+      } throws: { error in
+        guard case ConfigError.invalid(let msg) = error else { return false }
+        return msg.contains("feedback.volume")
+      }
+    }
+
+    #expect {
+      try Config.decode(Data(#"{"hotwords": [null]}"#.utf8))
+    } throws: { error in
+      guard case ConfigError.invalid(let msg) = error else { return false }
+      return msg.contains("hotwords")
+    }
+  }
+
   @Test func roundTripsThroughPrettyJSON() throws {
     var c = Config()
     c.hotwords = ["sherpa-onnx", "大希律王"]
