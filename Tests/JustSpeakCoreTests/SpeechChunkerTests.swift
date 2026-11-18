@@ -76,6 +76,53 @@ private func wav(_ name: String) throws -> [Float] {
     #expect(c.isSameSpeech(t, as: f), "tail \(t) vs final \(f)")
   }
 
+  @Test func shortSpeechWithinPadAfterPauseInvalidatesPendingTail() throws {
+    // 2.9s speech, 0.25s silence (enough to close VAD segment and capture pendingTail),
+    // then 0.25s trailing speech released immediately so total <= tail.upperBound + pad (0.5s).
+    let clip = try wav("noise_en.wav")
+    let prePause = Array(clip[0..<(29 * 1600)])
+    let silence = [Float](repeating: 0, count: 4000)
+    let postPause = Array(clip[(35 * 160)..<(60 * 160)])
+    let s = prePause + silence + postPause
+
+    let c = try SpeechChunker(vadModel: vad, params: { var p = SpeechChunker.Params(); p.eagerCutSeconds = 60; return p }())
+    var firstTail: Range<Int>?
+    for i in stride(from: 0, to: s.count, by: 1600) {
+      let end = min(i + 1600, s.count)
+      _ = s.withUnsafeBufferPointer { c.accept(UnsafeBufferPointer(rebasing: $0[i..<end])) }
+      if let tail = c.pendingTail(), firstTail == nil { firstTail = tail }
+    }
+    let t = try #require(firstTail)
+    let f = try #require(c.finish(total: s.count))
+    #expect(f.upperBound <= t.upperBound + 8000)
+    #expect(!c.isSameSpeech(t, as: f), "stale tail \(t) falsely matched final \(f) containing trailing speech")
+  }
+
+  @Test func flushedSegmentClampedWithinPadInvalidatesPendingTail() throws {
+    // Even when a new VAD segment is flushed at release, if release happens without trailing silence
+    // so `final.upperBound` is clamped to `total <= tail.upperBound + pad`, `isSameSpeech` must be false.
+    let clip = try wav("noise_en.wav")
+    let prePause = Array(clip[0..<(29 * 1600)])
+    let silence = [Float](repeating: 0, count: 4800)
+    let postPause = Array(clip[(20 * 160)..<(60 * 160)])
+    let s = prePause + silence + postPause
+
+    var params = SpeechChunker.Params()
+    params.eagerCutSeconds = 60
+    params.padSeconds = 1.0
+    let c = try SpeechChunker(vadModel: vad, params: params)
+    var firstTail: Range<Int>?
+    for i in stride(from: 0, to: s.count, by: 1600) {
+      let end = min(i + 1600, s.count)
+      _ = s.withUnsafeBufferPointer { c.accept(UnsafeBufferPointer(rebasing: $0[i..<end])) }
+      if let tail = c.pendingTail(), firstTail == nil { firstTail = tail }
+    }
+    let t = try #require(firstTail)
+    let f = try #require(c.finish(total: s.count))
+    #expect(f.upperBound <= t.upperBound + 16000)
+    #expect(!c.isSameSpeech(t, as: f))
+  }
+
   @Test func laterSpeechInvalidatesThePendingTail() throws {
     let s = try wav("rag_math.wav") + [Float](repeating: 0, count: 12000) + wav("rag_math.wav")
     let c = try SpeechChunker(vadModel: vad, params: { var p = SpeechChunker.Params(); p.eagerCutSeconds = 60; return p }())

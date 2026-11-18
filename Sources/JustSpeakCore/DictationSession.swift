@@ -78,6 +78,7 @@ public final class DictationSession: Dictation, @unchecked Sendable {
         chunker.accept(UnsafeBufferPointer(rebasing: $0[base...]))
       }
       ranges.forEach(self.launch)
+      if !ranges.isEmpty { self.speculative = nil }
       if let tail = chunker.pendingTail(), tail != self.speculative?.range {
         let (id, task) = self.decode(tail)
         self.speculative = (tail, task, id)
